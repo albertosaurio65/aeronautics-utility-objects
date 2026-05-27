@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "b": {
+      "item": "create:brass_sheet"
+    },
+    "p": {
+      "item": "simulated:spring"
+    },
+    "s": {
+      "item": "create:shaft"
+    }
+  },
+  "pattern": [
+    " s ",
+    "bpb",
+    " s "
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeronautics_utility_objects:universal_joint_rod"
+  }
+}
+

@@ -1,0 +1,153 @@
+﻿Compiled from "RapierGenericConstraintHandle.java"
+public class dev.ryanhcode.sable.physics.impl.rapier.constraint.generic.RapierGenericConstraintHandle extends dev.ryanhcode.sable.physics.impl.rapier.constraint.RapierConstraintHandle implements dev.ryanhcode.sable.api.physics.constraint.generic.GenericConstraintHandle {
+  private static final int FRAME_SIDE_FIRST;
+
+  private static final int FRAME_SIDE_SECOND;
+
+  public static dev.ryanhcode.sable.physics.impl.rapier.constraint.generic.RapierGenericConstraintHandle create(net.minecraft.server.level.ServerLevel, dev.ryanhcode.sable.sublevel.ServerSubLevel, dev.ryanhcode.sable.sublevel.ServerSubLevel, dev.ryanhcode.sable.api.physics.constraint.generic.GenericConstraintConfiguration);
+    Code:
+       0: aload_0
+       1: invokestatic  #1                  // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.getID:(Lnet/minecraft/server/level/ServerLevel;)I
+       4: istore        4
+       6: iconst_0
+       7: istore        5
+       9: aload_3
+      10: invokevirtual #7                  // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.lockedAxes:()Ljava/util/Set;
+      13: invokeinterface #13,  1           // InterfaceMethod java/util/Set.iterator:()Ljava/util/Iterator;
+      18: astore        6
+      20: aload         6
+      22: invokeinterface #19,  1           // InterfaceMethod java/util/Iterator.hasNext:()Z
+      27: ifeq          57
+      30: aload         6
+      32: invokeinterface #25,  1           // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      37: checkcast     #29                 // class dev/ryanhcode/sable/api/physics/constraint/ConstraintJointAxis
+      40: astore        7
+      42: iload         5
+      44: iconst_1
+      45: aload         7
+      47: invokevirtual #31                 // Method dev/ryanhcode/sable/api/physics/constraint/ConstraintJointAxis.ordinal:()I
+      50: ishl
+      51: ior
+      52: istore        5
+      54: goto          20
+      57: iload         4
+      59: aload_1
+      60: ifnonnull     67
+      63: iconst_m1
+      64: goto          71
+      67: aload_1
+      68: invokestatic  #35                 // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.getID:(Ldev/ryanhcode/sable/api/physics/PhysicsPipelineBody;)I
+      71: aload_2
+      72: ifnonnull     79
+      75: iconst_m1
+      76: goto          83
+      79: aload_2
+      80: invokestatic  #35                 // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.getID:(Ldev/ryanhcode/sable/api/physics/PhysicsPipelineBody;)I
+      83: aload_3
+      84: invokevirtual #38                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos1:()Lorg/joml/Vector3dc;
+      87: invokeinterface #42,  1           // InterfaceMethod org/joml/Vector3dc.x:()D
+      92: aload_3
+      93: invokevirtual #38                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos1:()Lorg/joml/Vector3dc;
+      96: invokeinterface #48,  1           // InterfaceMethod org/joml/Vector3dc.y:()D
+     101: aload_3
+     102: invokevirtual #38                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos1:()Lorg/joml/Vector3dc;
+     105: invokeinterface #51,  1           // InterfaceMethod org/joml/Vector3dc.z:()D
+     110: aload_3
+     111: invokevirtual #54                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation1:()Lorg/joml/Quaterniondc;
+     114: invokeinterface #58,  1           // InterfaceMethod org/joml/Quaterniondc.x:()D
+     119: aload_3
+     120: invokevirtual #54                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation1:()Lorg/joml/Quaterniondc;
+     123: invokeinterface #61,  1           // InterfaceMethod org/joml/Quaterniondc.y:()D
+     128: aload_3
+     129: invokevirtual #54                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation1:()Lorg/joml/Quaterniondc;
+     132: invokeinterface #62,  1           // InterfaceMethod org/joml/Quaterniondc.z:()D
+     137: aload_3
+     138: invokevirtual #54                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation1:()Lorg/joml/Quaterniondc;
+     141: invokeinterface #63,  1           // InterfaceMethod org/joml/Quaterniondc.w:()D
+     146: aload_3
+     147: invokevirtual #66                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos2:()Lorg/joml/Vector3dc;
+     150: invokeinterface #42,  1           // InterfaceMethod org/joml/Vector3dc.x:()D
+     155: aload_3
+     156: invokevirtual #66                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos2:()Lorg/joml/Vector3dc;
+     159: invokeinterface #48,  1           // InterfaceMethod org/joml/Vector3dc.y:()D
+     164: aload_3
+     165: invokevirtual #66                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.pos2:()Lorg/joml/Vector3dc;
+     168: invokeinterface #51,  1           // InterfaceMethod org/joml/Vector3dc.z:()D
+     173: aload_3
+     174: invokevirtual #69                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation2:()Lorg/joml/Quaterniondc;
+     177: invokeinterface #58,  1           // InterfaceMethod org/joml/Quaterniondc.x:()D
+     182: aload_3
+     183: invokevirtual #69                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation2:()Lorg/joml/Quaterniondc;
+     186: invokeinterface #61,  1           // InterfaceMethod org/joml/Quaterniondc.y:()D
+     191: aload_3
+     192: invokevirtual #69                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation2:()Lorg/joml/Quaterniondc;
+     195: invokeinterface #62,  1           // InterfaceMethod org/joml/Quaterniondc.z:()D
+     200: aload_3
+     201: invokevirtual #69                 // Method dev/ryanhcode/sable/api/physics/constraint/generic/GenericConstraintConfiguration.orientation2:()Lorg/joml/Quaterniondc;
+     204: invokeinterface #63,  1           // InterfaceMethod org/joml/Quaterniondc.w:()D
+     209: iload         5
+     211: invokestatic  #72                 // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.addGenericConstraint:(IIIDDDDDDDDDDDDDDI)J
+     214: lstore        6
+     216: new           #76                 // class dev/ryanhcode/sable/physics/impl/rapier/constraint/generic/RapierGenericConstraintHandle
+     219: dup
+     220: iload         4
+     222: lload         6
+     224: invokespecial #78                 // Method "<init>":(IJ)V
+     227: areturn
+
+  public dev.ryanhcode.sable.physics.impl.rapier.constraint.generic.RapierGenericConstraintHandle(int, long);
+    Code:
+       0: aload_0
+       1: iload_1
+       2: lload_2
+       3: invokespecial #82                 // Method dev/ryanhcode/sable/physics/impl/rapier/constraint/RapierConstraintHandle."<init>":(IJ)V
+       6: return
+
+  public void setFrame1(org.joml.Vector3dc, org.joml.Quaterniondc);
+    Code:
+       0: aload_0
+       1: getfield      #85                 // Field sceneID:I
+       4: aload_0
+       5: getfield      #89                 // Field handle:J
+       8: iconst_0
+       9: aload_1
+      10: invokeinterface #42,  1           // InterfaceMethod org/joml/Vector3dc.x:()D
+      15: aload_1
+      16: invokeinterface #48,  1           // InterfaceMethod org/joml/Vector3dc.y:()D
+      21: aload_1
+      22: invokeinterface #51,  1           // InterfaceMethod org/joml/Vector3dc.z:()D
+      27: aload_2
+      28: invokeinterface #58,  1           // InterfaceMethod org/joml/Quaterniondc.x:()D
+      33: aload_2
+      34: invokeinterface #61,  1           // InterfaceMethod org/joml/Quaterniondc.y:()D
+      39: aload_2
+      40: invokeinterface #62,  1           // InterfaceMethod org/joml/Quaterniondc.z:()D
+      45: aload_2
+      46: invokeinterface #63,  1           // InterfaceMethod org/joml/Quaterniondc.w:()D
+      51: invokestatic  #93                 // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.setConstraintFrame:(IJIDDDDDDD)V
+      54: return
+
+  public void setFrame2(org.joml.Vector3dc, org.joml.Quaterniondc);
+    Code:
+       0: aload_0
+       1: getfield      #85                 // Field sceneID:I
+       4: aload_0
+       5: getfield      #89                 // Field handle:J
+       8: iconst_1
+       9: aload_1
+      10: invokeinterface #42,  1           // InterfaceMethod org/joml/Vector3dc.x:()D
+      15: aload_1
+      16: invokeinterface #48,  1           // InterfaceMethod org/joml/Vector3dc.y:()D
+      21: aload_1
+      22: invokeinterface #51,  1           // InterfaceMethod org/joml/Vector3dc.z:()D
+      27: aload_2
+      28: invokeinterface #58,  1           // InterfaceMethod org/joml/Quaterniondc.x:()D
+      33: aload_2
+      34: invokeinterface #61,  1           // InterfaceMethod org/joml/Quaterniondc.y:()D
+      39: aload_2
+      40: invokeinterface #62,  1           // InterfaceMethod org/joml/Quaterniondc.z:()D
+      45: aload_2
+      46: invokeinterface #63,  1           // InterfaceMethod org/joml/Quaterniondc.w:()D
+      51: invokestatic  #93                 // Method dev/ryanhcode/sable/physics/impl/rapier/Rapier3D.setConstraintFrame:(IJIDDDDDDD)V
+      54: return
+}

@@ -1,0 +1,32 @@
+# Gradle and IDE build outputs
+.gradle/
+.eclipse/
+build/
+bin/
+out/
+
+# Local run directories and logs
+run/
+log/
+logs/
+crash-reports/
+
+# Generated mod artifacts
+*.jar
+!libs/*.jar
+!compile_deps/*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Large local scratch archives / dependency dumps
+*.zip
+*.7z
+*.rar
+_deps/
+com/
+新建文件夹/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log
+*.tmp

@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "b": {
+      "item": "create:brass_casing"
+    },
+    "d": {
+      "item": "minecraft:dried_kelp"
+    },
+    "p": {
+      "item": "create:precision_mechanism"
+    },
+    "s": {
+      "item": "create:shaft"
+    }
+  },
+  "pattern": [
+    " s ",
+    "dpd",
+    " b "
+  ],
+  "result": {
+    "count": 1,
+    "id": "aeronautics_utility_objects:brass_universal_joint"
+  }
+}
