@@ -1,0 +1,669 @@
+package com.enxv.aerouniversaljoint.content;
+
+import com.enxv.aerouniversaljoint.ModBlockEntities;
+import com.enxv.aerouniversaljoint.ModItems;
+import com.enxv.aerouniversaljoint.access.DetachedKineticSafetyGuard;
+import com.enxv.aerouniversaljoint.util.SubLevelReferenceHelper;
+import com.simibubi.create.content.kinetics.base.IRotate;
+import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
+import dev.ryanhcode.sable.api.physics.force.ForceTotal;
+import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
+import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
+import dev.ryanhcode.sable.companion.math.JOMLConversion;
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
+import dev.ryanhcode.sable.sublevel.SubLevel;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3d;
+
+public class UniversalJointBlockEntity extends KineticBlockEntity implements BlockEntitySubLevelActor, DetachedKineticSafetyGuard, MenuProvider {
+    private static final String TAG_LINKED_POS = "LinkedPos";
+    private static final String TAG_LINKED_SUB_LEVEL = "LinkedSubLevel";
+    private static final String TAG_SPEED_RATIO = "SpeedRatio";
+
+    private static final double BRASS_PULL_STIFFNESS = 12.0D;
+    private static final double BRASS_PULL_CURVE = 4.0D;
+    private static final double BRASS_PULL_DAMPING = 7.0D;
+    private static final double BRASS_PULL_DAMPING_GAIN = 3.0D;
+    private static final double MIN_PHYSICS_DISTANCE = 1.0E-4D;
+    private static final int SERVER_LINK_VALIDATION_INTERVAL = 10;
+
+    @Nullable
+    private BlockPos linkedPos;
+    @Nullable
+    private UUID linkedSubLevelId;
+    private float speedRatio = 1.0F;  // 默认1x速度，范围：-4.0 到 4.0
+
+    private final ForceTotal elasticForceTotal = new ForceTotal();
+    private final ForceTotal partnerElasticForceTotal = new ForceTotal();
+    private int serverValidationCountdown = SERVER_LINK_VALIDATION_INTERVAL;
+
+    public UniversalJointBlockEntity(BlockPos pos, BlockState state) {
+        this(ModBlockEntities.UNIVERSAL_JOINT.get(), pos, state);
+    }
+
+    public UniversalJointBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
+        super(type, pos, state);
+        this.setLazyTickRate(20);
+    }
+
+    @Override
+    public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
+    }
+
+    public JointVariant getVariant() {
+        return JointVariant.fromState(this.getBlockState());
+    }
+
+    @Override
+    public void tick() {
+        if (this.level == null) {
+            return;
+        }
+
+        super.tick();
+
+        if (this.level.isClientSide || this.linkedPos == null) {
+            return;
+        }
+
+        if (--this.serverValidationCountdown <= 0) {
+            this.serverValidationCountdown = SERVER_LINK_VALIDATION_INTERVAL;
+            this.validateLinkState(false);
+        }
+    }
+
+    @Override
+    public void lazyTick() {
+        if (this.level == null) {
+            return;
+        }
+
+        super.lazyTick();
+
+        if (this.level.isClientSide || this.linkedPos == null) {
+            return;
+        }
+        this.validateLinkState(true);
+    }
+
+    @Override
+    public void remove() {
+        if (this.level != null && !this.level.isClientSide && this.linkedPos != null) {
+            this.clearLinkInternal(true);
+        }
+        super.remove();
+    }
+
+    @Override
+    protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        if (this.linkedPos != null) {
+            tag.put(TAG_LINKED_POS, NbtUtils.writeBlockPos(this.linkedPos));
+        }
+        if (this.linkedSubLevelId != null) {
+            tag.putUUID(TAG_LINKED_SUB_LEVEL, this.linkedSubLevelId);
+        }
+        tag.putFloat(TAG_SPEED_RATIO, this.speedRatio);
+        super.write(tag, registries, clientPacket);
+    }
+
+    @Override
+    protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        BlockPos oldLinkedPos = this.linkedPos;
+        UUID oldLinkedSubLevelId = this.linkedSubLevelId;
+        this.linkedPos = tag.contains(TAG_LINKED_POS, Tag.TAG_INT_ARRAY)
+                ? NbtUtils.readBlockPos(tag, TAG_LINKED_POS).orElse(null)
+                : null;
+        this.linkedSubLevelId = tag.hasUUID(TAG_LINKED_SUB_LEVEL) ? tag.getUUID(TAG_LINKED_SUB_LEVEL) : null;
+        if (tag.contains(TAG_SPEED_RATIO)) {
+            this.speedRatio = tag.getFloat(TAG_SPEED_RATIO);
+        }
+        super.read(tag, registries, clientPacket);
+
+        if (!Objects.equals(oldLinkedPos, this.linkedPos) || !Objects.equals(oldLinkedSubLevelId, this.linkedSubLevelId)) {
+            this.invalidateRenderBoundingBox();
+        }
+    }
+
+    @Override
+    public List<BlockPos> addPropagationLocations(IRotate block, BlockState state, List<BlockPos> neighbours) {
+        super.addPropagationLocations(block, state, neighbours);
+
+        if (this.linkedPos == null || !this.isReferenceReady()) {
+            return neighbours;
+        }
+
+        UniversalJointBlockEntity other = this.resolveLinkedJoint();
+        if (other != null && other.references(this)) {
+            neighbours.add(this.linkedPos);
+        }
+
+        return neighbours;
+    }
+
+    @Override
+    public float propagateRotationTo(KineticBlockEntity target, BlockState stateFrom, BlockState stateTo, BlockPos diff,
+                                     boolean connectedViaAxes, boolean connectedViaCogs) {
+        if (target instanceof UniversalJointBlockEntity other && this.references(other) && other.references(this)) {
+            // 关键：只在一个方向应用speedRatio，另一个方向返回0（不传播）
+            // 使用位置比较确定传播方向
+            if (this.worldPosition.compareTo(other.worldPosition) < 0) {
+                // this位置更小 → this到other方向应用speedRatio
+                return this.speedRatio;
+            } else {
+                // other位置更小 → other到this方向，this不传播
+                return 0.0f;
+            }
+        }
+
+        return super.propagateRotationTo(target, stateFrom, stateTo, diff, connectedViaAxes, connectedViaCogs);
+    }
+
+    @Override
+    public void sable$physicsTick(ServerSubLevel subLevel, RigidBodyHandle handle, double timeStep) {
+        if (!this.getVariant().isElastic() || this.level == null || this.level.isClientSide) {
+            return;
+        }
+
+        if (!Objects.equals(this.getContainingSubLevelId(), subLevel.getUniqueId())) {
+            return;
+        }
+
+        UniversalJointBlockEntity other = this.resolveLinkedJoint();
+        if (other == null || !other.references(this) || !this.shouldControlElasticLink(other)) {
+            return;
+        }
+
+        ServerSubLevel otherSubLevel = other.getContainingSubLevelId() != null
+                ? (ServerSubLevel) SubLevelContainer.getContainer(this.level).getSubLevel(other.getContainingSubLevelId())
+                : null;
+        if (other.getContainingSubLevelId() != null && otherSubLevel == null) {
+            return;
+        }
+
+        if (otherSubLevel == subLevel) {
+            return;
+        }
+
+        Vector3d ownLocal = this.localCenterOf(this.worldPosition);
+        Vector3d otherLocal = this.localCenterOf(other.worldPosition);
+        Vector3d ownWorld = this.toWorldPosition(subLevel, ownLocal);
+        Vector3d otherWorld = this.toWorldPosition(otherSubLevel, otherLocal);
+        Vector3d delta = otherWorld.sub(ownWorld, new Vector3d());
+        double distance = delta.length();
+        if (distance < MIN_PHYSICS_DISTANCE) {
+            return;
+        }
+        if (this.getVariant().isBeyondDisconnectRange(distance * distance)) {
+            return;
+        }
+
+        Vector3d direction = delta.div(distance, new Vector3d());
+        double overshoot = distance - this.getVariant().getSoftRange();
+        if (overshoot <= 0.0D) {
+            return;
+        }
+
+        Vector3d ownVelocity = Sable.HELPER.getVelocity(this.level, ownLocal, new Vector3d());
+        Vector3d otherVelocity = Sable.HELPER.getVelocity(this.level, otherLocal, new Vector3d());
+        double separatingSpeed = Math.max(0.0D, otherVelocity.sub(ownVelocity, new Vector3d()).dot(direction));
+        double springMagnitude = BRASS_PULL_STIFFNESS * Math.expm1(overshoot * BRASS_PULL_CURVE);
+        double dampingMagnitude = separatingSpeed * (BRASS_PULL_DAMPING + overshoot * BRASS_PULL_DAMPING_GAIN);
+        double impulseMagnitude = (springMagnitude + dampingMagnitude) * timeStep;
+        if (impulseMagnitude <= 0.0D) {
+            return;
+        }
+
+        this.applyElasticImpulse(
+                subLevel,
+                handle,
+                ownLocal,
+                otherSubLevel,
+                otherLocal,
+                direction.mul(impulseMagnitude, new Vector3d()));
+    }
+
+    public ItemInteractionResult handleHeldRodItem(Player player, net.minecraft.world.InteractionHand hand) {
+        if (this.level == null) {
+            return ItemInteractionResult.SUCCESS;
+        }
+
+        if (this.level.isClientSide) {
+            return ItemInteractionResult.SUCCESS;
+        }
+
+        Optional<JointBindingData.Selection> selection = PendingRodSelections.read(player);
+        if (player.isShiftKeyDown() && selection.isPresent()) {
+            PendingRodSelections.clear(player);
+            player.displayClientMessage(Component.translatable("message.aeronautics_utility_objects.selection_cleared"), true);
+            return ItemInteractionResult.SUCCESS;
+        }
+
+        if (selection.isEmpty()) {
+            JointBindingData.Selection newSelection = new JointBindingData.Selection(
+                    this.level.dimension().location(),
+                    this.worldPosition,
+                    this.getContainingSubLevelId());
+            PendingRodSelections.write(player, newSelection);
+            player.displayClientMessage(Component.translatable("message.aeronautics_utility_objects.endpoint_selected"), true);
+            return ItemInteractionResult.SUCCESS;
+        }
+
+        JointBindingData.Selection stored = RecentMoveRemapper.remap(this.level, selection.get()).orElse(selection.get());
+        LinkResult result = this.linkToSelection(stored);
+        if (result.clearsSelection()) {
+            PendingRodSelections.clear(player);
+            if (result.consumesRod() && !player.hasInfiniteMaterials()) {
+                ItemStack heldStack = player.getItemInHand(hand);
+                heldStack.shrink(1);
+                player.setItemInHand(hand, heldStack.isEmpty() ? ItemStack.EMPTY : heldStack);
+            }
+            player.getInventory().setChanged();
+            player.containerMenu.broadcastChanges();
+        }
+        player.displayClientMessage(result.message(), true);
+        return ItemInteractionResult.SUCCESS;
+    }
+
+    public LinkResult linkToSelection(JointBindingData.Selection selection) {
+        if (this.level == null) {
+            return LinkResult.TARGET_UNAVAILABLE;
+        }
+        if (!this.level.dimension().location().equals(selection.dimensionId())) {
+            return LinkResult.WRONG_DIMENSION;
+        }
+
+        UniversalJointBlockEntity other = this.resolveReference(selection.pos(), selection.subLevelId());
+        if (other == null) {
+            return LinkResult.TARGET_UNAVAILABLE;
+        }
+
+        return this.createMutualLink(other);
+    }
+
+    public LinkResult createMutualLink(UniversalJointBlockEntity other) {
+        if (other == this) {
+            return LinkResult.SELF;
+        }
+
+        if (this.level == null || other.level == null || !this.level.dimension().equals(other.level.dimension())) {
+            return LinkResult.WRONG_DIMENSION;
+        }
+
+        if (!this.isCompatibleWith(other)) {
+            return LinkResult.MISMATCHED_VARIANT;
+        }
+
+        if (!this.getVariant().isWithinLinkRange(this.distanceSquaredTo(other))) {
+            return LinkResult.TOO_FAR;
+        }
+
+        if (this.references(other) && other.references(this)) {
+            return LinkResult.ALREADY_LINKED;
+        }
+
+        this.clearLinkInternal(true);
+        other.clearLinkInternal(true);
+
+        this.applyLinkReference(other.worldPosition, other.getContainingSubLevelId(), false);
+        other.applyLinkReference(this.worldPosition, this.getContainingSubLevelId(), false);
+        this.refreshKinetics();
+        other.refreshKinetics();
+        return LinkResult.SUCCESS;
+    }
+
+    public void detachLink() {
+        this.detachLink(true);
+    }
+
+    public void detachLinkWithoutDrop() {
+        this.detachLink(false);
+    }
+
+    public boolean hasLink() {
+        return this.linkedPos != null;
+    }
+
+    @Nullable
+    public UniversalJointBlockEntity getLoadedLinkedJoint() {
+        return this.resolveLinkedJoint();
+    }
+
+    public void updateReferenceTo(BlockPos newPos, @Nullable UUID newSubLevelId) {
+        if (this.linkedPos == null) {
+            return;
+        }
+        this.applyLinkReference(newPos, newSubLevelId, true);
+    }
+
+    public boolean matchesSelection(JointBindingData.Selection selection) {
+        return this.level != null
+                && this.level.dimension().location().equals(selection.dimensionId())
+                && this.worldPosition.equals(selection.pos())
+                && Objects.equals(this.getContainingSubLevelId(), selection.subLevelId());
+    }
+
+    public boolean references(UniversalJointBlockEntity other) {
+        return this.linkedPos != null
+                && this.linkedPos.equals(other.worldPosition)
+                && Objects.equals(this.linkedSubLevelId, other.getContainingSubLevelId());
+    }
+
+    @Nullable
+    public UUID getContainingSubLevelId() {
+        if (this.level == null) {
+            return null;
+        }
+        return SubLevelReferenceHelper.findContainingSubLevelId(this.level, this.worldPosition);
+    }
+
+    @Override
+    public @Nullable Iterable<SubLevel> sable$getConnectionDependencies() {
+        if (this.level == null || this.linkedPos == null) {
+            return null;
+        }
+
+        UUID dependencySubLevelId = this.linkedSubLevelId != null
+                ? this.linkedSubLevelId
+                : SubLevelReferenceHelper.findContainingSubLevelId(this.level, this.linkedPos);
+        if (dependencySubLevelId == null) {
+            return null;
+        }
+
+        SubLevel subLevel = SubLevelContainer.getContainer(this.level).getSubLevel(dependencySubLevelId);
+        return subLevel != null ? List.of(subLevel) : null;
+    }
+
+    @Nullable
+    private UniversalJointBlockEntity resolveLinkedJoint() {
+        return this.linkedPos == null ? null : this.resolveReference(this.linkedPos, this.linkedSubLevelId);
+    }
+
+    private JointBindingData.Selection linkedSelection() {
+        return new JointBindingData.Selection(this.level.dimension().location(), Objects.requireNonNull(this.linkedPos), this.linkedSubLevelId);
+    }
+
+    private void validateLinkState(boolean remapReference) {
+        if (this.level == null || this.level.isClientSide || this.linkedPos == null) {
+            return;
+        }
+
+        if (remapReference) {
+            Optional<JointBindingData.Selection> remapped = RecentMoveRemapper.remap(this.level, this.linkedSelection());
+            if (remapped.isPresent() && !this.matchesSelection(remapped.get())) {
+                this.applyLinkReference(remapped.get().pos(), remapped.get().subLevelId(), true);
+            }
+        }
+
+        if (!this.isReferenceReady()) {
+            return;
+        }
+
+        UniversalJointBlockEntity other = this.resolveLinkedJoint();
+        if (other == null || !other.references(this)) {
+            this.clearLinkInternal(false);
+            this.refreshKinetics();
+            return;
+        }
+
+        if (!this.isCompatibleWith(other)) {
+            this.detachLink();
+            return;
+        }
+
+        double distanceSquared = this.distanceSquaredTo(other);
+        if (!this.getVariant().isElastic() && !this.getVariant().isWithinLinkRange(distanceSquared)) {
+            this.detachLink();
+            return;
+        }
+
+        if (this.getVariant().isElastic() && this.getVariant().isBeyondDisconnectRange(distanceSquared)) {
+            this.detachLink();
+        }
+    }
+
+    @Nullable
+    private UniversalJointBlockEntity resolveReference(BlockPos pos, @Nullable UUID subLevelId) {
+        if (this.level == null) {
+            return null;
+        }
+
+        if (!this.level.isLoaded(pos)) {
+            return null;
+        }
+
+        BlockEntity blockEntity = SubLevelReferenceHelper.resolveBlockEntity(this.level, pos, subLevelId);
+        return blockEntity instanceof UniversalJointBlockEntity joint ? joint : null;
+    }
+
+    private boolean isReferenceReady() {
+        if (this.level == null || this.linkedPos == null || !this.level.isLoaded(this.linkedPos)) {
+            return false;
+        }
+        return this.linkedSubLevelId == null
+                || SubLevelContainer.getContainer(this.level).getSubLevel(this.linkedSubLevelId) != null
+                || SubLevelReferenceHelper.resolveBlockEntity(this.level, this.linkedPos, this.linkedSubLevelId) != null;
+    }
+
+    private void applyLinkReference(BlockPos pos, @Nullable UUID subLevelId, boolean refresh) {
+        this.linkedPos = pos.immutable();
+        this.linkedSubLevelId = subLevelId;
+        this.invalidateRenderBoundingBox();
+        if (refresh) {
+            this.refreshKinetics();
+        } else {
+            this.setChanged();
+            this.sendData();
+        }
+    }
+
+    private void clearLinkInternal(boolean updateOther) {
+        BlockPos oldPos = this.linkedPos;
+        UUID oldSubLevelId = this.linkedSubLevelId;
+
+        this.linkedPos = null;
+        this.linkedSubLevelId = null;
+        this.invalidateRenderBoundingBox();
+
+        if (updateOther && this.level != null && oldPos != null) {
+            UniversalJointBlockEntity other = this.resolveReference(oldPos, oldSubLevelId);
+            if (other != null && other.references(this)) {
+                other.clearLinkInternal(false);
+                other.refreshKinetics();
+            }
+        }
+    }
+
+    private void refreshKinetics() {
+        this.setChanged();
+        this.sendData();
+
+        if (this.level == null || this.level.isClientSide) {
+            return;
+        }
+
+        this.detachKinetics();
+        this.removeSource();
+        this.attachKinetics();
+    }
+
+    private void detachLink(boolean dropRod) {
+        if (this.linkedPos == null) {
+            return;
+        }
+
+        this.clearLinkInternal(true);
+        if (dropRod) {
+            this.dropLinkRod();
+        }
+        this.refreshKinetics();
+    }
+
+    private void dropLinkRod() {
+        if (this.level == null || this.level.isClientSide) {
+            return;
+        }
+
+        Block.popResource(this.level, this.worldPosition, new ItemStack(ModItems.UNIVERSAL_JOINT_ROD.get()));
+    }
+
+    private boolean isCompatibleWith(UniversalJointBlockEntity other) {
+        return this.getVariant() == other.getVariant();
+    }
+
+    private boolean shouldControlElasticLink(UniversalJointBlockEntity other) {
+        UUID ownSubLevelId = this.getContainingSubLevelId();
+        UUID otherSubLevelId = other.getContainingSubLevelId();
+        if (ownSubLevelId == null) {
+            return false;
+        }
+        if (otherSubLevelId == null) {
+            return true;
+        }
+        if (ownSubLevelId.equals(otherSubLevelId)) {
+            return false;
+        }
+        return SubLevelReferenceHelper.compareNullableUuids(ownSubLevelId, otherSubLevelId) < 0;
+    }
+
+    private void applyElasticImpulse(ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle, Vector3d ownLocal,
+                                     @Nullable ServerSubLevel otherSubLevel, Vector3d otherLocal, Vector3d worldImpulse) {
+        Vector3d ownImpulse = ownSubLevel.logicalPose().transformNormalInverse(worldImpulse, new Vector3d());
+        this.elasticForceTotal.applyImpulseAtPoint(ownSubLevel, ownLocal, ownImpulse);
+        ownHandle.applyForcesAndReset(this.elasticForceTotal);
+
+        if (otherSubLevel != null) {
+            RigidBodyHandle otherHandle = RigidBodyHandle.of(otherSubLevel);
+            Vector3d partnerImpulse = otherSubLevel.logicalPose().transformNormalInverse(worldImpulse.negate(new Vector3d()), new Vector3d());
+            this.partnerElasticForceTotal.applyImpulseAtPoint(otherSubLevel, otherLocal, partnerImpulse);
+            otherHandle.applyForcesAndReset(this.partnerElasticForceTotal);
+        }
+    }
+
+    private Vector3d localCenterOf(BlockPos pos) {
+        return JOMLConversion.atCenterOf(pos);
+    }
+
+    private Vector3d toWorldPosition(@Nullable ServerSubLevel subLevel, Vector3d localPosition) {
+        return subLevel == null ? localPosition : subLevel.logicalPose().transformPosition(localPosition, new Vector3d());
+    }
+
+    private double distanceSquaredTo(UniversalJointBlockEntity other) {
+        Vec3 ownCenter = Vec3.atCenterOf(this.worldPosition);
+        Vec3 otherCenter = Vec3.atCenterOf(other.worldPosition);
+        return Sable.HELPER.distanceSquaredWithSubLevels(this.level, ownCenter, otherCenter);
+    }
+
+    @Override
+    protected AABB createRenderBoundingBox() {
+        AABB base = super.createRenderBoundingBox();
+        if (this.linkedPos == null) {
+            return base;
+        }
+
+        return base.minmax(AABB.ofSize(Vec3.atCenterOf(this.linkedPos), 1.0D, 1.0D, 1.0D)).inflate(1.0D);
+    }
+
+    // MenuProvider implementation
+    @Override
+    public @Nullable AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
+        return new UniversalJointMenu(containerId, inventory, this);
+    }
+
+    @Override
+    public Component getDisplayName() {
+        return Component.translatable("block.aeronautics_utility_objects.universal_joint");
+    }
+
+    // Speed ratio management
+    public float getSpeedRatio() {
+        return this.speedRatio;
+    }
+
+    public void setSpeedRatio(float ratio) {
+        float clamped = Math.max(-4.0F, Math.min(4.0F, ratio));
+        if (Math.abs(this.speedRatio - clamped) < 0.001F) {
+            return;
+        }
+
+        this.speedRatio = clamped;
+        this.setChanged();
+        this.sendData();
+        this.refreshKinetics();
+    }
+
+    public void applySyncedSpeedRatio(float ratio) {
+        this.speedRatio = Math.max(-4.0F, Math.min(4.0F, ratio));
+    }
+
+    public static float getMaxSpeedRatio() {
+        return 4.0F;
+    }
+
+    public static float getMinSpeedRatio() {
+        return -4.0F;
+    }
+
+    public static Component describeSpeedRatio(float ratio) {
+        if (Math.abs(ratio) < 0.001F) {
+            return Component.literal("0x");
+        }
+        return Component.literal(String.format("%.2fx", ratio));
+    }
+
+    public enum LinkResult {
+        SUCCESS("linked", true, true),
+        ALREADY_LINKED("linked", true, false),
+        TARGET_UNAVAILABLE("target_missing", false, false),
+        WRONG_DIMENSION("wrong_dimension", false, false),
+        TOO_FAR("too_far", false, false),
+        SELF("same_joint", false, false),
+        MISMATCHED_VARIANT("same_type", false, false);
+
+        private final String keySuffix;
+        private final boolean clearsSelection;
+        private final boolean consumesRod;
+
+        LinkResult(String keySuffix, boolean clearsSelection, boolean consumesRod) {
+            this.keySuffix = keySuffix;
+            this.clearsSelection = clearsSelection;
+            this.consumesRod = consumesRod;
+        }
+
+        public Component message() {
+            return Component.translatable("message.aeronautics_utility_objects." + this.keySuffix);
+        }
+
+        public boolean clearsSelection() {
+            return this.clearsSelection;
+        }
+
+        public boolean consumesRod() {
+            return this.consumesRod;
+        }
+    }
+}

@@ -22,7 +22,7 @@ crash-reports/
 *.7z
 *.rar
 _deps/
-com/
+/com/
 新建文件夹/
 
 # OS/editor noise
