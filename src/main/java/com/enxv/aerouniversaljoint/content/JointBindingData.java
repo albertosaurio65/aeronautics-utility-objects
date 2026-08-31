@@ -9,9 +9,15 @@ public final class JointBindingData {
     private JointBindingData() {
     }
 
-    public record Selection(ResourceLocation dimensionId, BlockPos pos, @Nullable UUID subLevelId, boolean creativeHydraulic) {
+    public record Selection(ResourceLocation dimensionId, BlockPos pos, @Nullable UUID subLevelId,
+                            boolean creativeHydraulic, boolean giantHydraulic) {
         public Selection(ResourceLocation dimensionId, BlockPos pos, @Nullable UUID subLevelId) {
-            this(dimensionId, pos, subLevelId, false);
+            this(dimensionId, pos, subLevelId, false, false);
+        }
+
+        public Selection(ResourceLocation dimensionId, BlockPos pos, @Nullable UUID subLevelId,
+                         boolean creativeHydraulic) {
+            this(dimensionId, pos, subLevelId, creativeHydraulic, false);
         }
     }
 }

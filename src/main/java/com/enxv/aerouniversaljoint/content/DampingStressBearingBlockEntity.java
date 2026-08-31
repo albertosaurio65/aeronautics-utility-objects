@@ -5,17 +5,16 @@ import com.enxv.aerouniversaljoint.ModBlockEntities;
 import com.enxv.aerouniversaljoint.ModBlocks;
 import com.enxv.aerouniversaljoint.access.DetachedKineticSafetyGuard;
 import com.enxv.aerouniversaljoint.access.SwivelBearingConstraintHandleAccess;
-import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
 import com.simibubi.create.content.kinetics.base.IRotate;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BehaviourType;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollOptionBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
-import com.simibubi.create.infrastructure.config.AllConfigs;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
+import dev.ryanhcode.sable.api.physics.constraint.RotaryConstraintHandle;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
-import dev.ryanhcode.sable.api.physics.constraint.rotary.RotaryConstraintHandle;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.companion.math.JOMLConversion;
@@ -26,9 +25,7 @@ import dev.ryanhcode.sable.sublevel.plot.PlotChunkHolder;
 import dev.simulated_team.simulated.content.blocks.swivel_bearing.SwivelBearingBlock;
 import dev.simulated_team.simulated.content.blocks.swivel_bearing.SwivelBearingBlockEntity;
 import dev.simulated_team.simulated.index.SimBlocks;
-import dev.simulated_team.simulated.mixin_interface.extra_kinetics.KineticBlockEntityExtension;
 import dev.simulated_team.simulated.util.extra_kinetics.ExtraBlockPos;
-import dev.simulated_team.simulated.util.extra_kinetics.ExtraKinetics;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.ChatFormatting;
@@ -63,13 +60,6 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     private static final BehaviourType<ScrollValueBehaviour> RESISTANCE_BEHAVIOUR =
             new BehaviourType<>("aeronautics_utility_objects:damping_resistance");
 
-    private static final int MAX_RESISTANCE_VALUE = 256;
-    private static final int DEFAULT_RESISTANCE_VALUE = 64;
-    private static final float RATED_OUTPUT_SPEED_RPM = 256.0F;
-    private static final float MAX_FULL_SPEED_STRESS_OUTPUT = 200000.0F;
-    private static final float SUPPRESSED_STRESS_OUTPUT = 40000.0F;
-    private static final double RESISTANCE_TORQUE_PER_UNIT = 20.0D;
-    private static final double SPEED_DAMPING_BASE_RPM = 128.0D;
     private static final double FREE_SPIN_BASE_DAMPING = 1.0E-3D;
     private static final double MIN_RELATIVE_ANGULAR_SPEED = 1.0E-4D;
     private static final double TICKS_PER_SECOND = 20.0D;
@@ -86,7 +76,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     private static final long BLACKLIST_SCAN_INTERVAL_TICKS = 20L;
     private static final double BLACKLIST_ADJACENCY_EPSILON = 1.0D / 16.0D;
 
-    private final Output output;
+    private final DampingOutputKinetics output;
     private final Vector3d attachedAngularVelocity = new Vector3d();
     private final Vector3d parentAngularVelocity = new Vector3d();
     private final Vector3d attachedLocalAxis = new Vector3d();
@@ -94,10 +84,10 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     private final Vector3d attachedResistanceImpulse = new Vector3d();
     private final Vector3d parentResistanceImpulse = new Vector3d();
     private final Vector3d inertiaAxis = new Vector3d();
-    private int resistanceValue = DEFAULT_RESISTANCE_VALUE;
+    private int resistanceValue = AeroUniversalJointConfig.DEFAULT_DAMPING_DEFAULT_RESISTANCE;
     private boolean runtimeRefreshQueued = true;
     @Nullable
-    private RotaryConstraintHandle lastRefreshedHandle;
+    private PhysicsConstraintHandle lastRefreshedHandle;
     @Nullable
     private ScrollOptionBehaviour<?> hiddenLockingOption;
     @Nullable
@@ -121,7 +111,8 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
 
     public DampingStressBearingBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
-        this.output = new Output(type, new ExtraBlockPos(pos), state, this);
+        this.resistanceValue = AeroUniversalJointConfig.dampingDefaultResistance();
+        this.output = new DampingOutputKinetics(type, new ExtraBlockPos(pos), state, this);
         this.syncResistanceBehaviour();
     }
 
@@ -141,7 +132,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
                 Component.translatable("setting.aeronautics_utility_objects.damping_resistance"),
                 this,
                 new DirectionalValueBoxTransform(0))
-                .between(0, MAX_RESISTANCE_VALUE)
+                .between(0, getMaxResistanceValue())
                 .withFormatter(DampingStressBearingBlockEntity::formatResistanceValue)
                 .withCallback(this::setResistanceValue)
                 .requiresWrench();
@@ -165,6 +156,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
         }
 
         if (!level.isClientSide) {
+            this.normalizeResistanceValue(true);
             if (this.runtimeResyncTicks > 0) {
                 this.runtimeResyncTicks--;
             }
@@ -222,8 +214,6 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
             return;
         }
 
-        // Damping bearings do not use the swivel bearing's angle servo.
-        // We only ensure the hinge stays in the unlocked free-spin branch.
         this.forceConstraintFreeSpin();
     }
 
@@ -286,7 +276,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     public boolean setResistanceValueByIndex(int value) {
-        if (value < 0 || value > MAX_RESISTANCE_VALUE) {
+        if (value < 0 || value > getMaxResistanceValue()) {
             return false;
         }
 
@@ -295,7 +285,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     public void setResistanceValue(int value) {
-        int clamped = Math.max(0, Math.min(MAX_RESISTANCE_VALUE, value));
+        int clamped = clampResistanceValue(value);
         if (this.resistanceValue == clamped) {
             return;
         }
@@ -308,7 +298,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     public int getResistanceValue() {
-        return this.resistanceValue;
+        return this.getClampedResistanceValue();
     }
 
     @Override
@@ -330,7 +320,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
         tooltip.add(Component.translatable("tooltip.aeronautics_utility_objects.damping_setting")
                 .withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(" "))
-                .append(describeResistanceValue(this.resistanceValue).copy().withStyle(ChatFormatting.AQUA)));
+                .append(describeResistanceValue(this.getClampedResistanceValue()).copy().withStyle(ChatFormatting.AQUA)));
         if (this.stressOutputSuppressed) {
             Component blockedBlockName = this.describeSuppressedBlock();
             tooltip.add(Component.translatable("tooltip.aeronautics_utility_objects.stress_output_suppressed", blockedBlockName)
@@ -341,7 +331,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
 
     @Override
     protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-        tag.putInt(TAG_RESISTANCE, this.resistanceValue);
+        tag.putInt(TAG_RESISTANCE, this.getClampedResistanceValue());
         if (clientPacket) {
             tag.putBoolean(TAG_STRESS_OUTPUT_SUPPRESSED, this.stressOutputSuppressed);
             if (this.suppressedByBlockId != null) {
@@ -354,9 +344,9 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         if (tag.contains(TAG_RESISTANCE)) {
-            this.resistanceValue = Math.max(0, Math.min(MAX_RESISTANCE_VALUE, tag.getInt(TAG_RESISTANCE)));
+            this.resistanceValue = clampResistanceValue(tag.getInt(TAG_RESISTANCE));
         } else if (tag.contains(LEGACY_TAG_DAMPING)) {
-            this.resistanceValue = Math.max(0, Math.min(MAX_RESISTANCE_VALUE, tag.getInt(LEGACY_TAG_DAMPING)));
+            this.resistanceValue = clampResistanceValue(tag.getInt(LEGACY_TAG_DAMPING));
         }
         this.syncResistanceBehaviour();
         if (clientPacket && tag.contains(TAG_STRESS_OUTPUT_SUPPRESSED)) {
@@ -375,15 +365,38 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     public static int getMaxResistanceValue() {
-        return MAX_RESISTANCE_VALUE;
+        return AeroUniversalJointConfig.dampingMaxResistance();
     }
 
     public static Component describeResistanceValue(int value) {
-        return Component.literal(Integer.toString(Math.max(0, Math.min(MAX_RESISTANCE_VALUE, value))));
+        return Component.literal(Integer.toString(clampResistanceValue(value)));
     }
 
     private static String formatResistanceValue(int value) {
-        return Integer.toString(Math.max(0, Math.min(MAX_RESISTANCE_VALUE, value)));
+        return Integer.toString(clampResistanceValue(value));
+    }
+
+    private static int clampResistanceValue(int value) {
+        return Math.max(0, Math.min(getMaxResistanceValue(), value));
+    }
+
+    private int getClampedResistanceValue() {
+        return clampResistanceValue(this.resistanceValue);
+    }
+
+    private void normalizeResistanceValue(boolean notify) {
+        int clamped = this.getClampedResistanceValue();
+        if (this.resistanceValue == clamped) {
+            return;
+        }
+
+        this.resistanceValue = clamped;
+        this.syncResistanceBehaviour();
+        if (notify) {
+            this.setChanged();
+            this.sendData();
+            this.output.requestUpdate();
+        }
     }
 
     private Vector3d getWorldRotationAxis() {
@@ -401,7 +414,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
         return localAxis.normalize();
     }
 
-    private float measureOutputSpeed() {
+    float measureOutputSpeed() {
         if (this.level == null || this.level.isClientSide || !this.isAssembled()) {
             this.resetMeasuredOutput();
             return 0.0F;
@@ -461,24 +474,14 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
                 attachedPose);
     }
 
-    private float calculateStressCapacity(float speedRpm) {
-        float speedMagnitude = Math.abs(speedRpm);
-        if (speedMagnitude <= SPEED_EPSILON) {
-            return 0.0F;
-        }
-
-        // Stress output = (actual speed / rated speed) × resistance × coefficient
-        // Extra high-speed damping does not increase this payout.
-        float coefficient = MAX_FULL_SPEED_STRESS_OUTPUT / (float) MAX_RESISTANCE_VALUE;
-        float requestedCapacity = (speedMagnitude / RATED_OUTPUT_SPEED_RPM) * this.resistanceValue * coefficient;
-        float cappedCapacity = Math.min(MAX_FULL_SPEED_STRESS_OUTPUT, requestedCapacity);
-        return this.stressOutputSuppressed
-                ? Math.min(SUPPRESSED_STRESS_OUTPUT, cappedCapacity)
-                : cappedCapacity;
+    float calculateStressCapacity(float speedRpm) {
+        return DampingStressOutputModel.calculateCapacity(
+                speedRpm, this.getClampedResistanceValue(), getMaxResistanceValue(), this.stressOutputSuppressed);
     }
 
-    private float getFullSpeedStressOutput() {
-        return MAX_FULL_SPEED_STRESS_OUTPUT * this.resistanceValue / (float) MAX_RESISTANCE_VALUE;
+    float getFullSpeedStressOutput() {
+        return DampingStressOutputModel.calculateFullSpeedCapacity(
+                this.getClampedResistanceValue(), getMaxResistanceValue());
     }
 
     @Nullable
@@ -502,7 +505,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     @Nullable
-    private RotaryConstraintHandle getConstraintHandle() {
+    private PhysicsConstraintHandle getConstraintHandle() {
         return ((SwivelBearingConstraintHandleAccess) this).aeronautics$getConstraintHandle();
     }
 
@@ -513,13 +516,11 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     }
 
     private void forceConstraintFreeSpin() {
-        RotaryConstraintHandle constraintHandle = this.getConstraintHandle();
+        PhysicsConstraintHandle constraintHandle = this.getConstraintHandle();
         if (constraintHandle == null || !constraintHandle.isValid()) {
             return;
         }
 
-        // Rapier rotary constraints do not behave like a truly free hinge when the motor is driven with an exact all-zero state.
-        // A tiny damping value keeps the joint in the unlocked branch without introducing noticeable drag of its own.
         constraintHandle.setMotor(
                 RotaryConstraintHandle.DEFAULT_AXIS,
                 0.0D,
@@ -584,7 +585,8 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
     private void applyFixedResistance(ServerSubLevel attached, RigidBodyHandle attachedHandle, @Nullable ServerSubLevel parent,
                                       @Nullable RigidBodyHandle parentHandle, Vector3d worldAxis, double relativeAngularSpeed,
                                       double timeStep) {
-        if (this.resistanceValue <= 0 || timeStep <= 0.0D) {
+        int resistance = this.getClampedResistanceValue();
+        if (resistance <= 0 || timeStep <= 0.0D) {
             return;
         }
 
@@ -601,7 +603,7 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
             return;
         }
 
-        double requestedImpulse = this.resistanceValue * RESISTANCE_TORQUE_PER_UNIT
+        double requestedImpulse = resistance * AeroUniversalJointConfig.dampingResistanceTorquePerUnit()
                 * this.calculateSpeedDampingMultiplier(relativeAngularSpeed)
                 * timeStep;
         double stoppingImpulse = speedMagnitude / totalInverseInertia;
@@ -619,22 +621,23 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
 
     private double calculateSpeedDampingMultiplier(double relativeAngularSpeed) {
         double speedRpm = Math.abs(relativeAngularSpeed) * 60.0D / (2.0D * Math.PI);
-        if (speedRpm <= SPEED_DAMPING_BASE_RPM) {
+        double speedDampingBaseRpm = AeroUniversalJointConfig.dampingSpeedDampingBaseRpm();
+        if (speedRpm <= speedDampingBaseRpm) {
             return 1.0D;
         }
 
-        double octave = Math.log(speedRpm / SPEED_DAMPING_BASE_RPM) / Math.log(2.0D);
+        double octave = Math.log(speedRpm / speedDampingBaseRpm) / Math.log(2.0D);
         return Math.pow(2.0D, octave * (octave + 1.0D) * 0.5D);
     }
 
     void applySyncedResistanceValue(int value) {
-        this.resistanceValue = Math.max(0, Math.min(MAX_RESISTANCE_VALUE, value));
+        this.resistanceValue = clampResistanceValue(value);
         this.syncResistanceBehaviour();
     }
 
     private void syncResistanceBehaviour() {
         if (this.resistanceBehaviour != null) {
-            this.resistanceBehaviour.value = this.resistanceValue;
+            this.resistanceBehaviour.value = this.getClampedResistanceValue();
         }
     }
 
@@ -658,13 +661,17 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
         this.nextBlacklistScanTick = Long.MIN_VALUE;
     }
 
-    private boolean isRuntimeResyncActive() {
+    boolean isRuntimeResyncActive() {
         return this.runtimeRefreshQueued || this.runtimeResyncTicks > 0;
     }
 
+    boolean isStressOutputSuppressed() {
+        return this.stressOutputSuppressed;
+    }
+
     private void refreshRuntimeStateIfNeeded() {
-        RotaryConstraintHandle handle = this.getConstraintHandle();
-        RotaryConstraintHandle validHandle = handle != null && handle.isValid() ? handle : null;
+        PhysicsConstraintHandle handle = this.getConstraintHandle();
+        PhysicsConstraintHandle validHandle = handle != null && handle.isValid() ? handle : null;
         if (validHandle != this.lastRefreshedHandle) {
             this.runtimeRefreshQueued = true;
         }
@@ -935,267 +942,4 @@ public class DampingStressBearingBlockEntity extends SwivelBearingBlockEntity im
         this.output.requestUpdate();
     }
 
-    private static class Output extends GeneratingKineticBlockEntity
-            implements dev.simulated_team.simulated.util.extra_kinetics.ExtraKinetics.ExtraKineticsBlockEntity,
-            DetachedKineticSafetyGuard {
-        private static final String TAG_GENERATED_SPEED = "GeneratedSpeed";
-
-        static final IRotate CONFIG = new IRotate() {
-            @Override
-            public boolean hasShaftTowards(net.minecraft.world.level.LevelReader world, BlockPos pos, BlockState state, Direction face) {
-                return face == state.getValue(SwivelBearingBlock.FACING).getOpposite();
-            }
-
-            @Override
-            public Direction.Axis getRotationAxis(BlockState state) {
-                return state.getValue(SwivelBearingBlock.FACING).getAxis();
-            }
-        };
-
-        private final DampingStressBearingBlockEntity parent;
-        private int customValidationCountdown;
-        private float generatedSpeed;
-        private float publishedStressCapacity;
-        private boolean forceUpdate;
-        private int invalidSourceTicks;
-        private long nextPublishTick = Long.MIN_VALUE;
-
-        private Output(BlockEntityType<?> type, ExtraBlockPos pos, BlockState state, DampingStressBearingBlockEntity parent) {
-            super(type, pos, state);
-            this.parent = parent;
-        }
-
-        @Override
-        public void initialize() {
-            super.initialize();
-            this.generatedSpeed = 0.0F;
-            this.publishedStressCapacity = 0.0F;
-            this.invalidSourceTicks = 0;
-            this.nextPublishTick = Long.MIN_VALUE;
-            this.reActivateSource = true;
-            this.forceUpdate = true;
-        }
-
-        @Override
-        public void tick() {
-            if (this.level == null) {
-                return;
-            }
-
-            if (this.level.isClientSide) {
-                super.tick();
-                return;
-            }
-
-            ((KineticBlockEntityExtension) this).simulated$setValidationCountdown(Integer.MAX_VALUE);
-            if (--this.customValidationCountdown <= 0) {
-                this.customValidationCountdown = AllConfigs.server().kinetics.kineticValidationFrequency.get();
-                this.customValidateKinetics();
-            }
-
-            float previousSpeed = this.generatedSpeed;
-            float previousStressCapacity = this.publishedStressCapacity;
-            float measuredSpeed = this.parent.measureOutputSpeed();
-            if (this.shouldPublishOutput()) {
-                this.publishOutput(measuredSpeed);
-            }
-            super.tick();
-
-            if (this.forceUpdate
-                    || Math.abs(previousSpeed - this.generatedSpeed) > SPEED_EPSILON
-                    || Math.abs(previousStressCapacity - this.publishedStressCapacity) > SPEED_EPSILON) {
-                this.forceUpdate = false;
-                this.updateGeneratedRotation();
-            }
-        }
-
-        private boolean shouldPublishOutput() {
-            return this.forceUpdate
-                    || this.nextPublishTick == Long.MIN_VALUE
-                    || this.level != null && this.level.getGameTime() >= this.nextPublishTick;
-        }
-
-        private void publishOutput(float measuredSpeed) {
-            float targetSpeed = this.quantizePublishedSpeed(measuredSpeed);
-            // Clamp output speed to rated maximum to prevent Create blocks from breaking
-            // But calculate stress output based on actual measured speed (not clamped)
-            float clampedSpeed = Math.signum(targetSpeed) * Math.min(Math.abs(targetSpeed), RATED_OUTPUT_SPEED_RPM);
-            if (this.needsSafeReversal(clampedSpeed)) {
-                this.generatedSpeed = 0.0F;
-                this.publishedStressCapacity = 0.0F;
-                this.restartKineticOutput();
-            } else {
-                this.generatedSpeed = clampedSpeed;
-                // Use actual measured speed (not clamped) for stress output calculation
-                this.publishedStressCapacity = this.parent.calculateStressCapacity(targetSpeed);
-            }
-            if (this.level != null) {
-                this.nextPublishTick = this.level.getGameTime() + OUTPUT_PUBLISH_INTERVAL_TICKS;
-            }
-        }
-
-        private float quantizePublishedSpeed(float speed) {
-            float roundedSpeed = Math.round(speed / OUTPUT_PUBLISHED_STEP_RPM) * OUTPUT_PUBLISHED_STEP_RPM;
-            if (Math.abs(roundedSpeed) < OUTPUT_ZERO_DEADBAND_RPM) {
-                return 0.0F;
-            }
-            return roundedSpeed;
-        }
-
-        private void restartKineticOutput() {
-            if (this.level == null || this.level.isClientSide) {
-                return;
-            }
-            if (!this.hasNetwork() && !this.hasSource() && Math.abs(this.getSpeed()) <= SPEED_EPSILON) {
-                return;
-            }
-
-            this.detachKinetics();
-            this.removeSource();
-            this.reActivateSource = false;
-            this.invalidSourceTicks = 0;
-            this.forceUpdate = true;
-        }
-
-        private boolean needsSafeReversal(float targetSpeed) {
-            float actualSpeed = this.getSpeed();
-            return Math.abs(targetSpeed) > OUTPUT_ZERO_DEADBAND_RPM
-                    && Math.abs(actualSpeed) > OUTPUT_ZERO_DEADBAND_RPM
-                    && Math.signum(targetSpeed) != Math.signum(actualSpeed);
-        }
-
-        private void customValidateKinetics() {
-            if (this.parent.isRuntimeResyncActive()) {
-                this.invalidSourceTicks = 0;
-                return;
-            }
-            if (!this.hasSource()) {
-                this.invalidSourceTicks = 0;
-                return;
-            }
-            if (!this.hasNetwork()) {
-                if (++this.invalidSourceTicks <= OUTPUT_SOURCE_GRACE_TICKS) {
-                    return;
-                }
-                this.removeSource();
-                this.invalidSourceTicks = 0;
-                return;
-            }
-            if (!this.level.isLoaded(this.source)) {
-                this.invalidSourceTicks = 0;
-                return;
-            }
-
-            BlockEntity blockEntity = this.level.getBlockEntity(this.source);
-            if (blockEntity instanceof ExtraKinetics extraKinetics
-                    && ((KineticBlockEntityExtension) this).simulated$getConnectedToExtraKinetics()) {
-                blockEntity = extraKinetics.getExtraKinetics();
-            }
-
-            KineticBlockEntity source = blockEntity instanceof KineticBlockEntity kineticBlockEntity ? kineticBlockEntity : null;
-            if (source == null || source.getTheoreticalSpeed() == 0.0F) {
-                if (++this.invalidSourceTicks <= OUTPUT_SOURCE_GRACE_TICKS) {
-                    return;
-                }
-                this.removeSource();
-                this.detachKinetics();
-                this.invalidSourceTicks = 0;
-                return;
-            }
-            this.invalidSourceTicks = 0;
-        }
-
-        private void requestUpdate() {
-            this.forceUpdate = true;
-            this.invalidSourceTicks = 0;
-            this.nextPublishTick = Long.MIN_VALUE;
-        }
-
-        @Override
-        public float getGeneratedSpeed() {
-            return this.generatedSpeed;
-        }
-
-        @Override
-        public float calculateStressApplied() {
-            return 0.0F;
-        }
-
-        @Override
-        public float calculateAddedStressCapacity() {
-            // Return capacity per unit speed for Create's stress system
-            // Create will multiply this by actual speed automatically
-            float speed = Math.abs(this.getTheoreticalSpeed());
-            if (this.parent.stressOutputSuppressed && this.publishedStressCapacity > 0.0F) {
-                float capacityPerUnitSpeed = this.publishedStressCapacity / Math.max(speed, 1.0F);
-                this.lastCapacityProvided = capacityPerUnitSpeed;
-                return capacityPerUnitSpeed;
-            }
-            if (speed <= SPEED_EPSILON) {
-                this.lastCapacityProvided = 0.0F;
-                return 0.0F;
-            }
-            float capacityPerUnitSpeed = this.publishedStressCapacity / speed;
-            this.lastCapacityProvided = capacityPerUnitSpeed;
-            return capacityPerUnitSpeed;
-        }
-
-        @Override
-        public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
-            boolean added = super.addToGoggleTooltip(tooltip, isPlayerSneaking);
-            
-            // If parent didn't add anything (because capacity is 0), add it manually
-            if (!added && this.parent.isAssembled()) {
-                float maxCapacity = this.parent.stressOutputSuppressed
-                        ? SUPPRESSED_STRESS_OUTPUT
-                        : this.parent.getFullSpeedStressOutput();
-                if (maxCapacity > 0.0F) {
-                    com.simibubi.create.foundation.utility.CreateLang.translate("gui.goggles.generator_stats").forGoggles(tooltip);
-                    com.simibubi.create.foundation.utility.CreateLang.translate("tooltip.capacityProvided")
-                        .style(ChatFormatting.GRAY)
-                        .forGoggles(tooltip);
-                    
-                    // publishedStressCapacity is already the final stress output value
-                    // Don't multiply by speed again
-                    float currentCapacity = this.publishedStressCapacity;
-                    
-                    com.simibubi.create.foundation.utility.CreateLang.number(currentCapacity)
-                        .translate("generic.unit.stress")
-                        .style(ChatFormatting.AQUA)
-                        .space()
-                        .add(com.simibubi.create.foundation.utility.CreateLang.translate("gui.goggles.at_current_speed").style(ChatFormatting.DARK_GRAY))
-                        .forGoggles(tooltip, 1);
-                    
-                    return true;
-                }
-            }
-            
-            return added;
-        }
-
-        @Override
-        protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-            super.write(tag, registries, clientPacket);
-            if (clientPacket) {
-                tag.putFloat(TAG_GENERATED_SPEED, this.generatedSpeed);
-                tag.putFloat("PublishedStressCapacity", this.publishedStressCapacity);
-            }
-        }
-
-        @Override
-        protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
-            super.read(tag, registries, clientPacket);
-            this.generatedSpeed = clientPacket && tag.contains(TAG_GENERATED_SPEED) ? tag.getFloat(TAG_GENERATED_SPEED) : 0.0F;
-            this.publishedStressCapacity = clientPacket && tag.contains("PublishedStressCapacity") ? tag.getFloat("PublishedStressCapacity") : 0.0F;
-            this.invalidSourceTicks = 0;
-            this.nextPublishTick = Long.MIN_VALUE;
-            this.reActivateSource = true;
-            this.forceUpdate = true;
-        }
-
-        @Override
-        public KineticBlockEntity getParentBlockEntity() {
-            return this.parent;
-        }
-    }
 }

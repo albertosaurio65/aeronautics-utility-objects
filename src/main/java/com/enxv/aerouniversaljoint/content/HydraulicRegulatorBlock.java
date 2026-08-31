@@ -36,11 +36,30 @@ public class HydraulicRegulatorBlock extends DirectionalAxisKineticBlock impleme
 
     @Override
     protected Direction getFacingForPlacement(BlockPlaceContext context) {
+        Direction headFacing = this.getFacingTowardsAdjacentHead(context);
+        if (headFacing != null) {
+            return headFacing;
+        }
+
         Direction preferredFacing = this.getPreferredFacing(context);
         return preferredFacing != null
                 && (context.getPlayer() == null || !context.getPlayer().isShiftKeyDown())
                 ? preferredFacing.getOpposite()
                 : context.getClickedFace();
+    }
+
+    private Direction getFacingTowardsAdjacentHead(BlockPlaceContext context) {
+        BlockPos pos = context.getClickedPos();
+        for (Direction direction : Direction.values()) {
+            BlockState state = context.getLevel().getBlockState(pos.relative(direction));
+            if (state.getBlock() instanceof HydraulicConnectionHeadBlock
+                    && state.hasProperty(HydraulicConnectionHeadBlock.FACING)
+                    && state.getValue(HydraulicConnectionHeadBlock.FACING) == direction) {
+                return direction;
+            }
+        }
+
+        return null;
     }
 
     @Override

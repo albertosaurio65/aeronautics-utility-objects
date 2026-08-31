@@ -50,6 +50,13 @@ public class UniversalJointRenderer extends KineticBlockEntityRenderer<Universal
 
     public static void renderPreview(UniversalJointBlockEntity be, JointVariant variant, Vec3 start, Vec3 end,
                                      PoseStack ms, VertexConsumer buffer, int light, Color color, float partialTicks) {
+        Direction.Axis axis = getRotationAxisOf(be);
+        float coreAngle = be.getLevel() != null ? getAngleForBe(be, be.getBlockPos(), axis) : 0.0F;
+        renderPreviewWithAngle(be, variant, start, end, ms, buffer, light, color, coreAngle);
+    }
+
+    public static void renderPreviewWithAngle(UniversalJointBlockEntity be, JointVariant variant, Vec3 start, Vec3 end,
+                                              PoseStack ms, VertexConsumer buffer, int light, Color color, float coreAngle) {
         Vec3 connection = end.subtract(start);
         double distance = connection.length();
         if (distance < MIN_LINK_LENGTH) {
@@ -64,8 +71,6 @@ public class UniversalJointRenderer extends KineticBlockEntityRenderer<Universal
             return;
         }
 
-        Direction.Axis axis = getRotationAxisOf(be);
-        float coreAngle = getAngleForBe(be, be.getBlockPos(), axis);
         renderPreviewSleeve(be, ms, buffer, light, start, direction, color);
         renderPreviewSleeve(be, ms, buffer, light, end, reverseDirection, color);
         renderPreviewStretchedCore(be, ms, buffer, light, start.add(normalized.scale(SLEEVE_LENGTH)), direction,

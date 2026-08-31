@@ -36,6 +36,12 @@ public final class ModItems {
                     "tooltip.aeronautics_utility_objects.hydraulic_hinge_head_hint",
                     "tooltip.aeronautics_utility_objects.hydraulic_hinge_head_range"));
 
+    public static final DeferredItem<HydraulicConnectionHeadBlockItem> BRASS_HYDRAULIC_HINGE_HEAD = ITEMS.register(
+            "brass_hydraulic_hinge_head",
+            () -> new HydraulicConnectionHeadBlockItem(ModBlocks.BRASS_HYDRAULIC_HINGE_HEAD.get(), new Item.Properties(),
+                    "tooltip.aeronautics_utility_objects.brass_hydraulic_hinge_head_hint",
+                    "tooltip.aeronautics_utility_objects.brass_hydraulic_hinge_head_range"));
+
     public static final DeferredItem<HydraulicRegulatorBlockItem> HYDRAULIC_REGULATOR = ITEMS.register(
             "hydraulic_regulator",
             () -> new HydraulicRegulatorBlockItem(ModBlocks.HYDRAULIC_REGULATOR.get(), new Item.Properties()));
@@ -55,6 +61,10 @@ public final class ModItems {
     public static final DeferredItem<HydraulicRodItem> CREATIVE_HYDRAULIC_ROD = ITEMS.register(
             "creative_hydraulic_rod",
             () -> new HydraulicRodItem(new Item.Properties().stacksTo(16), true));
+
+    public static final DeferredItem<HydraulicRodItem> GIANT_HYDRAULIC_ROD = ITEMS.register(
+            "giant_hydraulic_rod",
+            () -> new HydraulicRodItem(new Item.Properties().stacksTo(16), false, true));
 
     private ModItems() {
     }

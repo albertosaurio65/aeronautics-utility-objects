@@ -1,8 +1,15 @@
 package com.enxv.aerouniversaljoint.content;
 
+import com.enxv.aerouniversaljoint.AeroUniversalJointConfig;
 import com.enxv.aerouniversaljoint.ModBlockEntities;
 import com.enxv.aerouniversaljoint.ModBlocks;
 import com.enxv.aerouniversaljoint.ModItems;
+import com.enxv.aerouniversaljoint.content.hydraulic.HydraulicLengthControl;
+import com.enxv.aerouniversaljoint.content.hydraulic.GiantHydraulicPhysics;
+import com.enxv.aerouniversaljoint.content.hydraulic.GiantHydraulicSettingsState;
+import com.enxv.aerouniversaljoint.content.hydraulic.HydraulicCylinderControl;
+import com.enxv.aerouniversaljoint.content.hydraulic.HydraulicSettings;
+import com.enxv.aerouniversaljoint.content.hydraulic.HydraulicSettingsState;
 import com.enxv.aerouniversaljoint.network.SyncHydraulicSelectionPayload;
 import com.enxv.aerouniversaljoint.util.SubLevelReferenceHelper;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
@@ -12,10 +19,11 @@ import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
 import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
 import dev.ryanhcode.sable.api.physics.PhysicsPipeline;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
-import dev.ryanhcode.sable.api.physics.constraint.generic.GenericConstraintConfiguration;
-import dev.ryanhcode.sable.api.physics.constraint.generic.GenericConstraintHandle;
-import dev.ryanhcode.sable.api.physics.constraint.rotary.RotaryConstraintConfiguration;
-import dev.ryanhcode.sable.api.physics.constraint.rotary.RotaryConstraintHandle;
+import dev.ryanhcode.sable.api.physics.constraint.GenericConstraintConfiguration;
+import dev.ryanhcode.sable.api.physics.constraint.GenericConstraintHandle;
+import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
+import dev.ryanhcode.sable.api.physics.constraint.RotaryConstraintConfiguration;
+import dev.ryanhcode.sable.api.physics.constraint.RotaryConstraintHandle;
 import dev.ryanhcode.sable.api.physics.force.ForceTotal;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
@@ -63,7 +71,8 @@ import org.joml.Quaterniond;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
 
-public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity implements BlockEntitySubLevelActor, MenuProvider {
+public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity implements BlockEntitySubLevelActor, MenuProvider,
+        SubLevelLinkedEndpoint {
     private static final String TAG_LINKED_POS = "LinkedPos";
     private static final String TAG_LINKED_SUB_LEVEL = "LinkedSubLevel";
     private static final String TAG_STRETCH_RESISTANCE = "StretchResistance";
@@ -75,38 +84,28 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     private static final String TAG_RETURN_FORCE = "ReturnForce";
     private static final String TAG_EFFECTIVE_RETURN_FORCE = "EffectiveReturnForce";
     private static final String TAG_CREATIVE_LINK = "CreativeLink";
+    private static final String TAG_GIANT_HYDRAULIC_LINK = "GiantHydraulicLink";
+    private static final String TAG_GIANT_HYDRAULIC_FLOW = "GiantHydraulicFlow";
+    private static final String TAG_GIANT_HYDRAULIC_VENTED = "GiantHydraulicVented";
+    private static final String TAG_GIANT_HYDRAULIC_TARGET_LENGTH = "GiantHydraulicTargetLength";
+    private static final String TAG_GIANT_HYDRAULIC_PRESSURE = "GiantHydraulicPressure";
+    private static final String TAG_GIANT_HYDRAULIC_REDSTONE_MIN = "GiantHydraulicRedstoneMin";
+    private static final String TAG_GIANT_HYDRAULIC_REDSTONE_MAX = "GiantHydraulicRedstoneMax";
     private static final String TAG_RENDER_OWNER = "RenderOwner";
     private static final String TAG_LINK_STRAIN_EFFECT = "LinkStrainEffect";
     private static final String TAG_LINK_STRAINED = "LinkStrained";
     private static final String TAG_HINGE_SUB_LEVEL = "HingeSubLevel";
     private static final String TAG_HINGE_LINK_POS = "HingeLinkPos";
-    private static final double MIN_LINK_LENGTH = 2.0D;
-    private static final double MAX_LINK_LENGTH = 15.0D;
-    private static final double BREAK_LINK_LENGTH = 17.0D;
-    private static final double LINK_STRAIN_LENGTH = 16.5D;
-    private static final int MIN_EXPECTED_LENGTH_TENTHS = (int) Math.round(MIN_LINK_LENGTH * 10.0D);
-    private static final int MAX_EXPECTED_LENGTH_TENTHS = (int) Math.round(MAX_LINK_LENGTH * 10.0D);
-    private static final int MAX_STRETCH_RESISTANCE_VALUE = 65536;
-    private static final int MAX_RETURN_FORCE_VALUE = 4096;
-    private static final int DEFAULT_STRETCH_RESISTANCE = 256;
-    private static final int DEFAULT_RETURN_FORCE = 1024;
-    private static final double LENGTH_LIMIT_STIFFNESS = 48.0D;
-    private static final double LENGTH_LIMIT_CURVE = 4.0D;
-    private static final double STRETCH_RESISTANCE_MOTOR_DAMPING_PER_UNIT = 0.5D;
-    private static final double STRETCH_RESISTANCE_MOTOR_MAX_FORCE_PER_UNIT = 12.0D;
-    private static final double RETURN_FORCE_PER_UNIT = 2.0D;
-    private static final double RETURN_FORCE_CURVE = 0.5D;
-    private static final double EXPECTED_LENGTH_APPROACH_RATE = 3.0D;
-    private static final double RETURN_FORCE_APPROACH_RATE = 1024.0D;
-    private static final double MIN_EXPECTED_LENGTH_APPROACH_MULTIPLIER = 0.5D;
-    private static final double MAX_EXPECTED_LENGTH_APPROACH_MULTIPLIER = 4.0D;
-    private static final double MAX_LENGTH_LIMIT_IMPULSE = 256.0D;
-    private static final double MAX_EXPECTED_RETURN_IMPULSE = 256.0D;
-    private static final double MAX_COMBINED_LENGTH_CONTROL_IMPULSE = 512.0D;
+    private static final String TAG_HINGE_PARENT_SUB_LEVEL = "HingeParentSubLevel";
+    private static final String TAG_HINGE_OWNER_POS = "HingeOwnerPos";
+    private static final String TAG_HINGE_MIN_ANGLE = "HingeMinAngle";
+    private static final String TAG_HINGE_MAX_ANGLE = "HingeMaxAngle";
+    private static final int LINK_WARMUP_TICKS = 5;
     private static final double CREATIVE_LENGTH_SERVO_STIFFNESS = 16384.0D;
     private static final double CREATIVE_LENGTH_SERVO_DAMPING = 1024.0D;
     private static final double CREATIVE_LENGTH_APPROACH_RATE = 12.0D;
     private static final double CREATIVE_LENGTH_MAX_FORCE = 1.0E12D;
+    private static final double GIANT_HYDRAULIC_HOLD_DAMPING = 1.0E6D;
     private static final double CREATIVE_LENGTH_WAKE_EPSILON = 0.01D;
     private static final int CREATIVE_LENGTH_WAKE_TICKS = 80;
     private static final double MIN_PHYSICS_DISTANCE = 1.0E-4D;
@@ -115,15 +114,23 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     private static final double HINGED_AXIS_ALIGNMENT_THRESHOLD = Math.cos(Math.toRadians(85.0D));
     private static final double QUARTER_TURN_RADIANS = Math.PI * 0.5D;
     private static final double MIN_ROLL_REFERENCE_LENGTH_SQUARED = 1.0E-8D;
+    private static final double HINGE_OWNER_MAX_DISTANCE_SQUARED = 4.0D;
     private static final int SERVER_LINK_VALIDATION_INTERVAL = 10;
     private static final int LINK_STRAIN_RECOVERY_TICKS = 12;
-    private static final long SUB_LEVEL_MOVE_PRESERVE_WINDOW_MS = 5_000L;
     private static final Set<ConstraintJointAxis> LOCKED_AXES = EnumSet.of(
             ConstraintJointAxis.LINEAR_X,
             ConstraintJointAxis.LINEAR_Z,
             ConstraintJointAxis.ANGULAR_X,
             ConstraintJointAxis.ANGULAR_Y,
             ConstraintJointAxis.ANGULAR_Z);
+    private static final Set<ConstraintJointAxis> HINGE_LIMITED_AXES = EnumSet.of(
+            ConstraintJointAxis.LINEAR_X,
+            ConstraintJointAxis.LINEAR_Y,
+            ConstraintJointAxis.LINEAR_Z,
+            ConstraintJointAxis.ANGULAR_X,
+            ConstraintJointAxis.ANGULAR_Z);
+    private static final int DEFAULT_HINGE_MIN_ANGLE = -90;
+    private static final int DEFAULT_HINGE_MAX_ANGLE = 90;
     @Nullable
     private BlockPos linkedPos;
     @Nullable
@@ -137,31 +144,37 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     @Nullable
     private BlockPos hingeLinkPos;
     @Nullable
-    private RotaryConstraintHandle hingeConstraintHandle;
+    private UUID hingeParentSubLevelId;
+    @Nullable
+    private BlockPos hingeOwnerPos;
+    @Nullable
+    private PhysicsConstraintHandle hingeConstraintHandle;
     @Nullable
     private Direction.Axis hingeConstraintAxis;
+    private int hingeMinAngle = DEFAULT_HINGE_MIN_ANGLE;
+    private int hingeMaxAngle = DEFAULT_HINGE_MAX_ANGLE;
     private int serverValidationCountdown = SERVER_LINK_VALIDATION_INTERVAL;
-    private int stretchResistance = DEFAULT_STRETCH_RESISTANCE;
-    private boolean freeMode = false;
-    private int expectedLengthTenths = MIN_EXPECTED_LENGTH_TENTHS;
-    private int redstoneMinLengthTenths = MIN_EXPECTED_LENGTH_TENTHS;
-    private int redstoneMaxLengthTenths = MAX_EXPECTED_LENGTH_TENTHS;
-    private double effectiveExpectedLengthBlocks = MIN_LINK_LENGTH;
+    private final HydraulicSettingsState settings = new HydraulicSettingsState();
+    private final GiantHydraulicSettingsState giantHydraulicSettings = new GiantHydraulicSettingsState();
+    private double effectiveExpectedLengthBlocks = AeroUniversalJointConfig.DEFAULT_HYDRAULIC_ROD_MIN_LINK_LENGTH;
     private boolean expectedLengthTransitionPending = true;
     private double expectedLengthApproachMultiplier = 1.0D;
-    private int returnForce = DEFAULT_RETURN_FORCE;
     private double effectiveReturnForce = 0.0D;
+    private GiantHydraulicPhysics.State giantHydraulicPhysics = GiantHydraulicPhysics.State.empty();
+    private int linkWarmupTicks;
     private boolean creativeLink;
+    private boolean giantHydraulicLink;
     private final ForceTotal lengthForceTotal = new ForceTotal();
     private final ForceTotal partnerLengthForceTotal = new ForceTotal();
     private boolean detachingForBlockRemoval;
-    private long preserveLinkForSubLevelMoveUntil;
-    private long lastCreativeServoWakeGameTime = Long.MIN_VALUE;
+    private boolean preservingLinkForSubLevelMove;
+    private long lastHydraulicServoWakeGameTime = Long.MIN_VALUE;
     private long creativeServoWakeUntilGameTime = Long.MIN_VALUE;
     private double snappedConnectionRollOffset = Double.NaN;
     private int linkStrainEffectDelay;
     private float linkStrainEffect;
     private boolean linkWasStrained;
+    private boolean giantHydraulicOverloadEffect;
     @Nullable
     private HydraulicConnectionHeadBlockEntity cachedLinkedHead;
     @Nullable
@@ -175,6 +188,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     public HydraulicConnectionHeadBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
+        HingeAssemblyOrphanCleaner.register(this);
+        this.effectiveExpectedLengthBlocks = AeroUniversalJointConfig.hydraulicRodMinLinkLength();
         this.setLazyTickRate(20);
     }
 
@@ -190,6 +205,10 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
         super.tick();
         this.tickLinkStrainEffect();
+
+        if (!this.level.isClientSide) {
+            this.normalizeConfiguredSettings(true);
+        }
 
         if (this.level.isClientSide || this.linkedPos == null) {
             if (!this.level.isClientSide && this.hingeSubLevelId != null) {
@@ -207,6 +226,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (--this.serverValidationCountdown <= 0) {
             this.serverValidationCountdown = SERVER_LINK_VALIDATION_INTERVAL;
             this.validateLinkState(true);
+            this.validateHingeAssemblyOwner();
         }
     }
 
@@ -227,8 +247,9 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     @Override
     public void remove() {
-        boolean preservingForSubLevelMove = this.isPreservingLinkForSubLevelMove();
-        this.preserveLinkForSubLevelMoveUntil = 0L;
+        HingeAssemblyOrphanCleaner.unregister(this);
+        boolean preservingForSubLevelMove = this.preservingLinkForSubLevelMove;
+        this.preservingLinkForSubLevelMove = false;
         if (this.level != null && !this.level.isClientSide && this.linkedPos != null) {
             if (preservingForSubLevelMove) {
                 this.clearLinkInternal(false);
@@ -255,16 +276,29 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (this.linkedPos != null && this.hasRenderOwnerPreference) {
             tag.putBoolean(TAG_RENDER_OWNER, this.renderOwner);
         }
-        tag.putInt(TAG_STRETCH_RESISTANCE, this.stretchResistance);
-        tag.putBoolean(TAG_FREE_MODE, this.freeMode);
-        tag.putInt(TAG_EXPECTED_LENGTH_TENTHS, this.expectedLengthTenths);
-        tag.putInt(TAG_REDSTONE_MIN_LENGTH_TENTHS, this.redstoneMinLengthTenths);
-        tag.putInt(TAG_REDSTONE_MAX_LENGTH_TENTHS, this.redstoneMaxLengthTenths);
+        tag.putInt(TAG_STRETCH_RESISTANCE, this.getStretchResistance());
+        tag.putBoolean(TAG_FREE_MODE, this.settings.freeMode());
+        tag.putInt(TAG_EXPECTED_LENGTH_TENTHS, this.getExpectedLengthTenths());
+        tag.putInt(TAG_REDSTONE_MIN_LENGTH_TENTHS, this.getRedstoneMinLengthTenths());
+        tag.putInt(TAG_REDSTONE_MAX_LENGTH_TENTHS, this.getRedstoneMaxLengthTenths());
         tag.putDouble(TAG_EFFECTIVE_EXPECTED_LENGTH, this.effectiveExpectedLengthBlocks);
-        tag.putInt(TAG_RETURN_FORCE, this.returnForce);
+        tag.putInt(TAG_RETURN_FORCE, this.getReturnForce());
         tag.putDouble(TAG_EFFECTIVE_RETURN_FORCE, this.effectiveReturnForce);
+        if (this.isBrassHingeHead()) {
+            tag.putInt(TAG_HINGE_MIN_ANGLE, this.hingeMinAngle);
+            tag.putInt(TAG_HINGE_MAX_ANGLE, this.hingeMaxAngle);
+        }
         if (this.creativeLink) {
             tag.putBoolean(TAG_CREATIVE_LINK, true);
+        }
+        if (this.giantHydraulicLink) {
+            tag.putBoolean(TAG_GIANT_HYDRAULIC_LINK, true);
+            tag.putInt(TAG_GIANT_HYDRAULIC_FLOW, this.giantHydraulicSettings.flowLitresPerMinute());
+            tag.putBoolean(TAG_GIANT_HYDRAULIC_VENTED, this.giantHydraulicSettings.vented());
+            tag.putInt(TAG_GIANT_HYDRAULIC_TARGET_LENGTH, this.giantHydraulicSettings.targetLengthTenths());
+            tag.putInt(TAG_GIANT_HYDRAULIC_PRESSURE, this.giantHydraulicSettings.pressureBar());
+            tag.putInt(TAG_GIANT_HYDRAULIC_REDSTONE_MIN, this.giantHydraulicSettings.redstoneMinLengthTenths());
+            tag.putInt(TAG_GIANT_HYDRAULIC_REDSTONE_MAX, this.giantHydraulicSettings.redstoneMaxLengthTenths());
         }
         if (this.linkStrainEffect != 0.0F) {
             tag.putFloat(TAG_LINK_STRAIN_EFFECT, this.linkStrainEffect);
@@ -275,6 +309,12 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (this.hingeSubLevelId != null && this.hingeLinkPos != null) {
             tag.putUUID(TAG_HINGE_SUB_LEVEL, this.hingeSubLevelId);
             tag.put(TAG_HINGE_LINK_POS, NbtUtils.writeBlockPos(this.hingeLinkPos));
+            if (this.hingeOwnerPos != null) {
+                tag.put(TAG_HINGE_OWNER_POS, NbtUtils.writeBlockPos(this.hingeOwnerPos));
+            }
+            if (this.hingeParentSubLevelId != null) {
+                tag.putUUID(TAG_HINGE_PARENT_SUB_LEVEL, this.hingeParentSubLevelId);
+            }
         }
         super.write(tag, registries, clientPacket);
     }
@@ -285,40 +325,68 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         UUID oldLinkedSubLevelId = this.linkedSubLevelId;
         UUID oldHingeSubLevelId = this.hingeSubLevelId;
         BlockPos oldHingeLinkPos = this.hingeLinkPos;
+        BlockPos oldHingeOwnerPos = this.hingeOwnerPos;
+        UUID oldHingeParentSubLevelId = this.hingeParentSubLevelId;
         boolean oldHasRenderOwnerPreference = this.hasRenderOwnerPreference;
         boolean oldRenderOwner = this.renderOwner;
+        boolean oldGiantHydraulicLink = this.giantHydraulicLink;
         this.linkedPos = tag.contains(TAG_LINKED_POS, Tag.TAG_INT_ARRAY)
                 ? NbtUtils.readBlockPos(tag, TAG_LINKED_POS).orElse(null)
                 : null;
         this.linkedSubLevelId = tag.hasUUID(TAG_LINKED_SUB_LEVEL) ? tag.getUUID(TAG_LINKED_SUB_LEVEL) : null;
         this.hasRenderOwnerPreference = this.linkedPos != null && tag.contains(TAG_RENDER_OWNER, Tag.TAG_BYTE);
         this.renderOwner = this.hasRenderOwnerPreference && tag.getBoolean(TAG_RENDER_OWNER);
-        this.stretchResistance = tag.contains(TAG_STRETCH_RESISTANCE, Tag.TAG_INT)
+        int stretchResistance = tag.contains(TAG_STRETCH_RESISTANCE, Tag.TAG_INT)
                 ? clampStretchResistance(tag.getInt(TAG_STRETCH_RESISTANCE))
-                : DEFAULT_STRETCH_RESISTANCE;
-        this.freeMode = tag.contains(TAG_FREE_MODE, Tag.TAG_BYTE) && tag.getBoolean(TAG_FREE_MODE);
-        this.expectedLengthTenths = tag.contains(TAG_EXPECTED_LENGTH_TENTHS, Tag.TAG_INT)
+                : AeroUniversalJointConfig.hydraulicRodDefaultStretchResistance();
+        boolean freeMode = tag.contains(TAG_FREE_MODE, Tag.TAG_BYTE) && tag.getBoolean(TAG_FREE_MODE);
+        int expectedLengthTenths = tag.contains(TAG_EXPECTED_LENGTH_TENTHS, Tag.TAG_INT)
                 ? clampExpectedLengthTenths(tag.getInt(TAG_EXPECTED_LENGTH_TENTHS))
-                : MIN_EXPECTED_LENGTH_TENTHS;
-        this.redstoneMinLengthTenths = tag.contains(TAG_REDSTONE_MIN_LENGTH_TENTHS, Tag.TAG_INT)
+                : getMinExpectedLengthTenths();
+        int redstoneMinLengthTenths = tag.contains(TAG_REDSTONE_MIN_LENGTH_TENTHS, Tag.TAG_INT)
                 ? clampExpectedLengthTenths(tag.getInt(TAG_REDSTONE_MIN_LENGTH_TENTHS))
-                : MIN_EXPECTED_LENGTH_TENTHS;
-        this.redstoneMaxLengthTenths = tag.contains(TAG_REDSTONE_MAX_LENGTH_TENTHS, Tag.TAG_INT)
+                : getMinExpectedLengthTenths();
+        int redstoneMaxLengthTenths = tag.contains(TAG_REDSTONE_MAX_LENGTH_TENTHS, Tag.TAG_INT)
                 ? clampExpectedLengthTenths(tag.getInt(TAG_REDSTONE_MAX_LENGTH_TENTHS))
-                : MAX_EXPECTED_LENGTH_TENTHS;
-        this.normalizeRedstoneLengthRange();
+                : getMaxExpectedLengthTenths();
+        int returnForce = tag.contains(TAG_RETURN_FORCE, Tag.TAG_INT)
+                ? clampReturnForce(tag.getInt(TAG_RETURN_FORCE))
+                : AeroUniversalJointConfig.hydraulicRodDefaultReturnForce();
+        this.settings.applyBaseSettings(stretchResistance, freeMode, expectedLengthTenths, returnForce);
+        this.settings.applyRedstoneLengthRange(redstoneMinLengthTenths, redstoneMaxLengthTenths);
         boolean hasEffectiveExpectedLength = tag.contains(TAG_EFFECTIVE_EXPECTED_LENGTH, Tag.TAG_DOUBLE);
         this.effectiveExpectedLengthBlocks = hasEffectiveExpectedLength
                 ? clampEffectiveExpectedLength(tag.getDouble(TAG_EFFECTIVE_EXPECTED_LENGTH))
-                : this.expectedLengthTenths / 10.0D;
-        this.expectedLengthTransitionPending = !this.freeMode && this.linkedPos != null && !hasEffectiveExpectedLength;
-        this.returnForce = tag.contains(TAG_RETURN_FORCE, Tag.TAG_INT)
-                ? clampReturnForce(tag.getInt(TAG_RETURN_FORCE))
-                : DEFAULT_RETURN_FORCE;
+                : this.settings.expectedLengthTenths() / 10.0D;
+        this.expectedLengthTransitionPending = !this.settings.freeMode() && this.linkedPos != null && !hasEffectiveExpectedLength;
         this.effectiveReturnForce = tag.contains(TAG_EFFECTIVE_RETURN_FORCE, Tag.TAG_DOUBLE)
                 ? clampEffectiveReturnForce(tag.getDouble(TAG_EFFECTIVE_RETURN_FORCE))
                 : 0.0D;
+        this.linkWarmupTicks = 0;
         this.creativeLink = tag.contains(TAG_CREATIVE_LINK, Tag.TAG_BYTE) && tag.getBoolean(TAG_CREATIVE_LINK);
+        this.giantHydraulicLink = tag.contains(TAG_GIANT_HYDRAULIC_LINK, Tag.TAG_BYTE)
+                && tag.getBoolean(TAG_GIANT_HYDRAULIC_LINK);
+        if (this.giantHydraulicLink) {
+            int flow = tag.contains(TAG_GIANT_HYDRAULIC_FLOW, Tag.TAG_INT)
+                    ? tag.getInt(TAG_GIANT_HYDRAULIC_FLOW)
+                    : GiantHydraulicSettingsState.DEFAULT_FLOW_LITRES_PER_MINUTE;
+            boolean vented = tag.contains(TAG_GIANT_HYDRAULIC_VENTED, Tag.TAG_BYTE)
+                    && tag.getBoolean(TAG_GIANT_HYDRAULIC_VENTED);
+            int target = tag.contains(TAG_GIANT_HYDRAULIC_TARGET_LENGTH, Tag.TAG_INT)
+                    ? tag.getInt(TAG_GIANT_HYDRAULIC_TARGET_LENGTH)
+                    : Math.max(30, expectedLengthTenths);
+            int pressure = tag.contains(TAG_GIANT_HYDRAULIC_PRESSURE, Tag.TAG_INT)
+                    ? tag.getInt(TAG_GIANT_HYDRAULIC_PRESSURE)
+                    : GiantHydraulicSettingsState.DEFAULT_PRESSURE_BAR;
+            int redstoneMin = tag.contains(TAG_GIANT_HYDRAULIC_REDSTONE_MIN, Tag.TAG_INT)
+                    ? tag.getInt(TAG_GIANT_HYDRAULIC_REDSTONE_MIN)
+                    : 30;
+            int redstoneMax = tag.contains(TAG_GIANT_HYDRAULIC_REDSTONE_MAX, Tag.TAG_INT)
+                    ? tag.getInt(TAG_GIANT_HYDRAULIC_REDSTONE_MAX)
+                    : getMaxExpectedLengthTenths();
+            this.giantHydraulicSettings.applyBase(flow, vented, target, pressure);
+            this.giantHydraulicSettings.applyRedstoneRange(redstoneMin, redstoneMax);
+        }
         this.linkStrainEffect = tag.contains(TAG_LINK_STRAIN_EFFECT, Tag.TAG_FLOAT)
                 ? tag.getFloat(TAG_LINK_STRAIN_EFFECT)
                 : 0.0F;
@@ -329,6 +397,19 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         this.hingeLinkPos = tag.contains(TAG_HINGE_LINK_POS, Tag.TAG_INT_ARRAY)
                 ? NbtUtils.readBlockPos(tag, TAG_HINGE_LINK_POS).orElse(null)
                 : null;
+        this.hingeParentSubLevelId = tag.hasUUID(TAG_HINGE_PARENT_SUB_LEVEL)
+                ? tag.getUUID(TAG_HINGE_PARENT_SUB_LEVEL)
+                : null;
+        this.hingeOwnerPos = tag.contains(TAG_HINGE_OWNER_POS, Tag.TAG_INT_ARRAY)
+                ? NbtUtils.readBlockPos(tag, TAG_HINGE_OWNER_POS).orElse(null)
+                : null;
+        this.hingeMinAngle = clampHingeAngle(tag.contains(TAG_HINGE_MIN_ANGLE, Tag.TAG_INT)
+                ? tag.getInt(TAG_HINGE_MIN_ANGLE) : DEFAULT_HINGE_MIN_ANGLE);
+        this.hingeMaxAngle = clampHingeAngle(tag.contains(TAG_HINGE_MAX_ANGLE, Tag.TAG_INT)
+                ? tag.getInt(TAG_HINGE_MAX_ANGLE) : DEFAULT_HINGE_MAX_ANGLE);
+        if (this.hingeMaxAngle <= this.hingeMinAngle) {
+            this.hingeMaxAngle = Math.min(180, this.hingeMinAngle + 1);
+        }
         this.linkStrainEffectDelay = this.linkWasStrained || this.linkStrainEffect >= 0.0F
                 ? 0
                 : LINK_STRAIN_RECOVERY_TICKS;
@@ -338,8 +419,11 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
                 || !Objects.equals(oldLinkedSubLevelId, this.linkedSubLevelId)
                 || oldHasRenderOwnerPreference != this.hasRenderOwnerPreference
                 || oldRenderOwner != this.renderOwner
+                || oldGiantHydraulicLink != this.giantHydraulicLink
                 || !Objects.equals(oldHingeSubLevelId, this.hingeSubLevelId)
-                || !Objects.equals(oldHingeLinkPos, this.hingeLinkPos)) {
+                || !Objects.equals(oldHingeLinkPos, this.hingeLinkPos)
+                || !Objects.equals(oldHingeOwnerPos, this.hingeOwnerPos)
+                || !Objects.equals(oldHingeParentSubLevelId, this.hingeParentSubLevelId)) {
             this.clearCachedLinkedHead();
             this.invalidateRenderBoundingBox();
         }
@@ -363,12 +447,14 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         if (selection.isEmpty()) {
-            boolean creativeRod = player.getItemInHand(hand).getItem() instanceof HydraulicRodItem rodItem && rodItem.isCreative();
+            HydraulicRodItem rodItem = player.getItemInHand(hand).getItem() instanceof HydraulicRodItem item
+                    ? item : null;
             JointBindingData.Selection newSelection = new JointBindingData.Selection(
                     this.level.dimension().location(),
                     this.worldPosition,
                     this.getContainingSubLevelId(),
-                    creativeRod);
+                    rodItem != null && rodItem.isCreative(),
+                    rodItem != null && rodItem.isGiant());
             PendingHydraulicSelections.write(player, newSelection);
             syncSelectionToClient(player, newSelection);
             player.displayClientMessage(Component.translatable("message.aeronautics_utility_objects.endpoint_selected"), true);
@@ -383,8 +469,11 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             PendingHydraulicSelections.write(player, stored);
             syncSelectionToClient(player, stored);
         }
-        boolean creativeRod = player.getItemInHand(hand).getItem() instanceof HydraulicRodItem rodItem && rodItem.isCreative();
-        LinkResult result = this.linkToSelection(stored, creativeRod || stored.creativeHydraulic());
+        HydraulicRodItem rodItem = player.getItemInHand(hand).getItem() instanceof HydraulicRodItem item
+                ? item : null;
+        LinkResult result = this.linkToSelection(stored,
+                (rodItem != null && rodItem.isCreative()) || stored.creativeHydraulic(),
+                (rodItem != null && rodItem.isGiant()) || stored.giantHydraulic());
         if (result.clearsSelection()) {
             PendingHydraulicSelections.clear(player);
             syncSelectionToClient(player, null);
@@ -401,10 +490,15 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public LinkResult linkToSelection(JointBindingData.Selection selection) {
-        return this.linkToSelection(selection, selection.creativeHydraulic());
+        return this.linkToSelection(selection, selection.creativeHydraulic(), selection.giantHydraulic());
     }
 
     public LinkResult linkToSelection(JointBindingData.Selection selection, boolean creativeLink) {
+        return this.linkToSelection(selection, creativeLink, selection.giantHydraulic());
+    }
+
+    public LinkResult linkToSelection(JointBindingData.Selection selection, boolean creativeLink,
+                                      boolean giantHydraulicLink) {
         if (this.level == null) {
             return LinkResult.TARGET_UNAVAILABLE;
         }
@@ -417,7 +511,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             return LinkResult.TARGET_UNAVAILABLE;
         }
 
-        return this.createMutualLink(other, creativeLink);
+        return this.createMutualLink(other, creativeLink, giantHydraulicLink);
     }
 
     public LinkResult createMutualLink(HydraulicConnectionHeadBlockEntity other) {
@@ -425,6 +519,11 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public LinkResult createMutualLink(HydraulicConnectionHeadBlockEntity other, boolean creativeLink) {
+        return this.createMutualLink(other, creativeLink, false);
+    }
+
+    public LinkResult createMutualLink(HydraulicConnectionHeadBlockEntity other, boolean creativeLink,
+                                      boolean giantHydraulicLink) {
         if (other == this) {
             return LinkResult.SELF;
         }
@@ -457,9 +556,13 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             other.disassembleHingeAssembly();
             return LinkResult.TARGET_UNAVAILABLE;
         }
+        this.alignHingeAssemblyForLink(other);
+        other.alignHingeAssemblyForLink(this);
 
-        this.applyLinkReference(other.worldPosition, other.getContainingSubLevelId(), false, true, creativeLink);
-        other.applyLinkReference(this.worldPosition, this.getContainingSubLevelId(), true, true, creativeLink);
+        this.applyLinkReference(other.worldPosition, other.getContainingSubLevelId(), false, true,
+                creativeLink, giantHydraulicLink);
+        other.applyLinkReference(this.worldPosition, this.getContainingSubLevelId(), true, true,
+                creativeLink, giantHydraulicLink);
         this.cacheLinkedHead(other);
         other.cacheLinkedHead(this);
         this.initializeExpectedLength(other);
@@ -480,7 +583,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public void preserveLinkForSubLevelMove() {
-        this.preserveLinkForSubLevelMoveUntil = System.currentTimeMillis() + SUB_LEVEL_MOVE_PRESERVE_WINDOW_MS;
+        this.disassembleHingeAssembly();
+        this.preservingLinkForSubLevelMove = true;
     }
 
     public boolean hasLink() {
@@ -499,7 +603,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     @Override
     public @Nullable AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return new HydraulicConnectionHeadMenu(containerId, inventory, this);
+        return new HydraulicConnectionHeadMenu(containerId, inventory, this, false);
     }
 
     @Override
@@ -512,22 +616,69 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         return this.resolveLinkedConnectionHead();
     }
 
+    @Override
+    public @Nullable SubLevelLinkedEndpoint getLoadedLinkedEndpoint() {
+        return this.getLoadedLinkedConnectionHead();
+    }
+
     public boolean isHingedHead() {
         return HydraulicHingeHeadBlock.isHinged(this.getBlockState());
+    }
+
+    public boolean isBrassHingeHead() {
+        return this.isHingedHead() && BrassHydraulicHingeHeadBlock.isBrass(this.getBlockState());
+    }
+
+    public int getHingeMinAngle() {
+        return this.hingeMinAngle;
+    }
+
+    public int getHingeMaxAngle() {
+        return this.hingeMaxAngle;
+    }
+
+    public void setHingeAngleLimits(int minAngle, int maxAngle) {
+        if (!this.isBrassHingeHead()) {
+            return;
+        }
+        int min = clampHingeAngle(minAngle);
+        int max = clampHingeAngle(maxAngle);
+        if (max <= min) {
+            max = Math.min(180, min + 1);
+            if (max <= min) {
+                min = Math.max(-180, max - 1);
+            }
+        }
+        if (this.hingeMinAngle == min && this.hingeMaxAngle == max) {
+            return;
+        }
+        this.hingeMinAngle = min;
+        this.hingeMaxAngle = max;
+        this.setChanged();
+        this.sendData();
+        this.refreshHingeMotor();
+    }
+
+    private static int clampHingeAngle(int angle) {
+        return Math.max(-180, Math.min(180, angle));
     }
 
     public boolean isCreativeLink() {
         return this.creativeLink;
     }
 
+    public boolean isGiantHydraulicLink() {
+        return this.giantHydraulicLink;
+    }
+
     @Nullable
     public UUID getHingeSubLevelId() {
-        return this.hingeSubLevelId;
+        return this.isHingeAssemblyOwnedByCurrentParent() ? this.hingeSubLevelId : null;
     }
 
     @Nullable
     public BlockPos getHingeLinkPos() {
-        return this.hingeLinkPos;
+        return this.isHingeAssemblyOwnedByCurrentParent() ? this.hingeLinkPos : null;
     }
 
     public void updateReferenceTo(BlockPos newPos, @Nullable UUID newSubLevelId) {
@@ -622,12 +773,12 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         List<SubLevel> dependencies = new ArrayList<>(3);
-        this.addDependency(dependencies, this.getHingeSubLevel());
+        this.addDependency(dependencies, this.getOwnedHingeSubLevel());
 
         HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
         if (other != null) {
             this.addDependency(dependencies, other.getRodConstraintSubLevel());
-            this.addDependency(dependencies, other.getHingeSubLevel());
+            this.addDependency(dependencies, other.getOwnedHingeSubLevel());
         } else if (this.linkedSubLevelId != null) {
             this.addDependency(dependencies, SubLevelContainer.getContainer(this.level).getSubLevel(this.linkedSubLevelId));
         }
@@ -661,6 +812,12 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         if (!other.ensureHingeAssemblyForLink()) {
+            this.removeConstraintHandle();
+            return;
+        }
+
+        if (this.linkWarmupTicks > 0) {
+            this.linkWarmupTicks--;
             this.removeConstraintHandle();
             return;
         }
@@ -707,7 +864,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
                 .mul(new Quaterniond().rotationY(this.snappedConnectionRollOffset));
         if (this.constraintHandle == null || !this.constraintHandle.isValid()) {
             this.removeConstraintHandle();
-            this.constraintHandle = SubLevelPhysicsSystem.require(this.level).getPipeline().addConstraint(ownSubLevel, otherSubLevel,
+            this.constraintHandle = SubLevelPhysicsSystem.require(this.level).getPipeline().addConstraint(
+                    ownSubLevel, otherSubLevel,
                     new GenericConstraintConfiguration(ownLocal, otherLocal, ownOrientation, otherOrientation, LOCKED_AXES));
             if (this.constraintHandle == null) {
                 return;
@@ -716,11 +874,11 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             this.constraintHandle.setFrame1(ownLocal, ownOrientation);
             this.constraintHandle.setFrame2(otherLocal, otherOrientation);
         }
-        if (!this.creativeLink) {
+        if (!this.creativeLink && !this.giantHydraulicLink) {
             this.refreshRodDampingMotor();
         }
 
-        this.applyLengthLimits(other, ownSubLevel, ownHandle, ownLocal, ownWorld,
+        this.applyLengthLimits(ownSubLevel, ownHandle, ownLocal, ownWorld,
                 otherSubLevel, otherLocal, otherWorld, worldDirection, timeStep);
     }
 
@@ -732,15 +890,18 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (this.creativeLink) {
             double target = Double.isFinite(this.effectiveExpectedLengthBlocks)
                     ? this.effectiveExpectedLengthBlocks
-                    : this.expectedLengthTenths / 10.0D;
+                    : this.settings.expectedLengthTenths() / 10.0D;
             this.constraintHandle.setMotor(ConstraintJointAxis.LINEAR_Y, target,
                     CREATIVE_LENGTH_SERVO_STIFFNESS, CREATIVE_LENGTH_SERVO_DAMPING, true,
                     CREATIVE_LENGTH_MAX_FORCE);
             return;
         }
 
-        double damping = Math.max(0.0D, this.stretchResistance * STRETCH_RESISTANCE_MOTOR_DAMPING_PER_UNIT);
-        double maxForce = Math.max(0.0D, this.stretchResistance * STRETCH_RESISTANCE_MOTOR_MAX_FORCE_PER_UNIT);
+        int stretchResistance = this.getStretchResistance();
+        double damping = Math.max(0.0D,
+                stretchResistance * AeroUniversalJointConfig.hydraulicRodStretchDampingPerUnit());
+        double maxForce = Math.max(0.0D,
+                stretchResistance * AeroUniversalJointConfig.hydraulicRodStretchMaxForcePerUnit());
         this.constraintHandle.setMotor(ConstraintJointAxis.LINEAR_Y, 0.0D, 0.0D, damping, true, maxForce);
     }
 
@@ -753,7 +914,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     @Nullable
     private ServerSubLevel getRodConstraintServerSubLevel(@Nullable ServerSubLevel containingSubLevel) {
         if (this.isHingedHead()) {
-            ServerSubLevel hingeSubLevel = this.getHingeServerSubLevel();
+            ServerSubLevel hingeSubLevel = this.getOwnedHingeServerSubLevel();
             if (hingeSubLevel != null) {
                 return hingeSubLevel;
             }
@@ -764,7 +925,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     @Nullable
     private SubLevel getRodConstraintSubLevel() {
         if (this.isHingedHead()) {
-            SubLevel hingeSubLevel = this.getHingeSubLevel();
+            SubLevel hingeSubLevel = this.getOwnedHingeSubLevel();
             if (hingeSubLevel != null) {
                 return hingeSubLevel;
             }
@@ -789,7 +950,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         if (this.getContainingSubLevelId() != null || this.linkedSubLevelId != null) {
-            double radius = BREAK_LINK_LENGTH + 1.0D;
+            double radius = AeroUniversalJointConfig.hydraulicRodBreakLinkLength() + 1.0D;
             double diameter = radius * 2.0D;
             return AABB.ofSize(Vec3.atCenterOf(this.worldPosition), diameter, diameter, diameter);
         }
@@ -807,7 +968,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     private boolean isWithinLinkRange(HydraulicConnectionHeadBlockEntity other) {
-        return this.distanceSquaredTo(other) <= BREAK_LINK_LENGTH * BREAK_LINK_LENGTH;
+        double breakLength = AeroUniversalJointConfig.hydraulicRodBreakLinkLength();
+        return this.distanceSquaredTo(other) <= breakLength * breakLength;
     }
 
     private boolean isAlignedForLink(HydraulicConnectionHeadBlockEntity other) {
@@ -877,7 +1039,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     private JointBindingData.Selection linkedSelection() {
         return new JointBindingData.Selection(this.level.dimension().location(), Objects.requireNonNull(this.linkedPos),
-                this.linkedSubLevelId, this.creativeLink);
+                this.linkedSubLevelId, this.creativeLink, this.giantHydraulicLink);
     }
 
     private void validateLinkState(boolean remapReference) {
@@ -981,6 +1143,38 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         return this.level == null ? null : Sable.HELPER.getContaining(this);
     }
 
+    public boolean isSettingsInteractionValid(Player player) {
+        if (this.level == null || this.level != player.level() || this.isRemoved()) {
+            return false;
+        }
+        Vec3 ownAnchor = this.getSettingsWorldAnchor();
+        Vec3 otherAnchor = ownAnchor;
+        HydraulicConnectionHeadBlockEntity other = this.getLoadedLinkedConnectionHead();
+        if (other != null && other != this) {
+            otherAnchor = other.getSettingsWorldAnchor();
+        }
+        Vec3 eye = player.getEyePosition();
+        double interactionRange = player.blockInteractionRange();
+        return distanceToSegmentSqr(eye, ownAnchor, otherAnchor)
+                <= interactionRange * interactionRange;
+    }
+
+    private Vec3 getSettingsWorldAnchor() {
+        Vector3d world = this.toWorldPosition(this.getRodConstraintSubLevel(), this.getRodConstraintLocalAnchor());
+        return new Vec3(world.x, world.y, world.z);
+    }
+
+    private static double distanceToSegmentSqr(Vec3 point, Vec3 start, Vec3 end) {
+        Vec3 segment = end.subtract(start);
+        double lengthSqr = segment.lengthSqr();
+        if (lengthSqr < 1.0E-8D) {
+            return point.distanceToSqr(start);
+        }
+        double t = point.subtract(start).dot(segment) / lengthSqr;
+        t = Math.max(0.0D, Math.min(1.0D, t));
+        return point.distanceToSqr(start.add(segment.scale(t)));
+    }
+
     private boolean ensureHingeAssemblyForLink() {
         if (!this.isHingedHead()) {
             this.disassembleHingeAssembly();
@@ -990,11 +1184,16 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             return this.hingeSubLevelId != null && this.hingeLinkPos != null;
         }
 
+        if (!this.isHingeAssemblyOwnedByCurrentParent()) {
+            this.discardForeignHingeAssemblyReference();
+        }
         ServerSubLevel hingeSubLevel = this.getHingeServerSubLevel();
         if (hingeSubLevel == null || this.hingeLinkPos == null) {
             this.removeHingeConstraintHandle();
             this.hingeSubLevelId = null;
             this.hingeLinkPos = null;
+            this.hingeParentSubLevelId = null;
+            this.hingeOwnerPos = null;
             this.hingeConstraintAxis = null;
             hingeSubLevel = this.createHingeLinkSubLevel();
             if (hingeSubLevel == null) {
@@ -1042,6 +1241,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         SubLevelPhysicsSystem physicsSystem = container.physicsSystem();
         PhysicsPipeline pipeline = physicsSystem.getPipeline();
         SubLevel containing = this.getContainingSubLevel();
+        this.hingeParentSubLevelId = containing != null ? containing.getUniqueId() : null;
+        this.hingeOwnerPos = this.worldPosition.immutable();
         if (containing != null) {
             hingeSubLevel.logicalPose().orientation().set(containing.logicalPose().orientation());
             SubLevelAssemblyHelper.kickFromContainingSubLevel(serverLevel, physicsSystem, pipeline, hingeSubLevel, containing);
@@ -1065,7 +1266,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         Direction.Axis currentAxis = HydraulicHingeHeadBlock.getHingeAxis(this.getBlockState());
         if (this.hingeConstraintHandle != null
                 && this.hingeConstraintHandle.isValid()
-                && this.hingeConstraintAxis == currentAxis) {
+                && this.hingeConstraintAxis == currentAxis
+                && this.isBrassHingeHead() == (this.hingeConstraintHandle instanceof GenericConstraintHandle)) {
             this.refreshHingeMotor();
             return true;
         }
@@ -1075,11 +1277,18 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         Vector3d linkAnchor = this.localCenterOf(this.hingeLinkPos);
         Vector3d parentAxis = axisVector(currentAxis);
         Vector3d linkAxis = axisVector(currentAxis);
-        this.hingeConstraintHandle = SubLevelContainer.getContainer(serverLevel)
-                .physicsSystem()
-                .getPipeline()
-                .addConstraint(this.getContainingServerSubLevel(), hingeSubLevel,
-                        new RotaryConstraintConfiguration(parentAnchor, linkAnchor, parentAxis, linkAxis));
+        if (this.isBrassHingeHead()) {
+            Quaterniond parentOrientation = this.frameOrientation(parentAxis);
+            Quaterniond linkOrientation = this.frameOrientation(linkAxis);
+            this.hingeConstraintHandle = SubLevelContainer.getContainer(serverLevel).physicsSystem().getPipeline().addConstraint(
+                    this.getContainingServerSubLevel(), hingeSubLevel,
+                    new GenericConstraintConfiguration(parentAnchor, linkAnchor, parentOrientation, linkOrientation,
+                            HINGE_LIMITED_AXES));
+        } else {
+            this.hingeConstraintHandle = SubLevelContainer.getContainer(serverLevel).physicsSystem().getPipeline().addConstraint(
+                    this.getContainingServerSubLevel(), hingeSubLevel,
+                    new RotaryConstraintConfiguration(parentAnchor, linkAnchor, parentAxis, linkAxis));
+        }
         if (this.hingeConstraintHandle == null) {
             return false;
         }
@@ -1096,12 +1305,69 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         this.hingeConstraintHandle.setMotor(
-                RotaryConstraintHandle.DEFAULT_AXIS,
+                this.isBrassHingeHead() ? ConstraintJointAxis.ANGULAR_Y : RotaryConstraintHandle.DEFAULT_AXIS,
                 0.0D,
                 0.0D,
                 HINGE_FREE_SPIN_DAMPING,
                 false,
                 0.0D);
+        if (this.isBrassHingeHead() && this.hingeConstraintHandle instanceof GenericConstraintHandle generic) {
+            generic.setLimit(ConstraintJointAxis.ANGULAR_Y,
+                    Math.toRadians(this.hingeMinAngle), Math.toRadians(this.hingeMaxAngle));
+        }
+    }
+
+    private void alignHingeAssemblyForLink(HydraulicConnectionHeadBlockEntity other) {
+        if (!this.isHingedHead() || !(this.level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        ServerSubLevel hingeSubLevel = this.getHingeServerSubLevel();
+        if (hingeSubLevel == null || this.hingeLinkPos == null) {
+            return;
+        }
+
+        SubLevel ownContainingSubLevel = this.getContainingSubLevel();
+        Vector3d ownAnchor = this.toWorldPosition(ownContainingSubLevel, this.localCenterOf(this.worldPosition));
+        Vector3d otherAnchor = other.toWorldPosition(other.getRodConstraintSubLevel(), other.getRodConstraintLocalAnchor());
+        Vector3d targetDirection = otherAnchor.sub(ownAnchor, new Vector3d());
+        if (!normalizeIfUsable(targetDirection)) {
+            return;
+        }
+
+        Vector3d hingeAxis = this.getWorldHingeAxis(ownContainingSubLevel);
+        if (!normalizeIfUsable(hingeAxis) || !projectOntoPlane(targetDirection, hingeAxis)) {
+            return;
+        }
+
+        Vector3d currentDirection = this.getWorldFacingVector(hingeSubLevel);
+        if (!projectOntoPlane(currentDirection, hingeAxis)) {
+            return;
+        }
+
+        double angle = Math.atan2(new Vector3d(currentDirection).cross(targetDirection).dot(hingeAxis),
+                currentDirection.dot(targetDirection));
+        if (!Double.isFinite(angle) || Math.abs(angle) <= 1.0E-6D) {
+            return;
+        }
+
+        Quaterniond alignedOrientation = new Quaterniond()
+                .rotationAxis(angle, hingeAxis.x(), hingeAxis.y(), hingeAxis.z())
+                .mul(hingeSubLevel.logicalPose().orientation())
+                .normalize();
+        Vector3d localAnchor = this.localCenterOf(this.hingeLinkPos);
+        Vector3d rotatedOffset = localAnchor.sub(hingeSubLevel.logicalPose().rotationPoint(), new Vector3d())
+                .mul(hingeSubLevel.logicalPose().scale());
+        alignedOrientation.transform(rotatedOffset);
+
+        Vector3d alignedPosition = ownAnchor.sub(rotatedOffset, new Vector3d());
+        hingeSubLevel.logicalPose().orientation().set(alignedOrientation);
+        hingeSubLevel.logicalPose().position().set(alignedPosition);
+        SubLevelContainer.getContainer(serverLevel)
+                .physicsSystem()
+                .getPipeline()
+                .teleport(hingeSubLevel, alignedPosition, alignedOrientation);
+        hingeSubLevel.updateLastPose();
     }
 
     @Nullable
@@ -1118,6 +1384,43 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         return subLevel instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved() ? serverSubLevel : null;
     }
 
+    @Nullable
+    private SubLevel getOwnedHingeSubLevel() {
+        return this.isHingeAssemblyOwnedByCurrentParent() ? this.getHingeSubLevel() : null;
+    }
+
+    @Nullable
+    private ServerSubLevel getOwnedHingeServerSubLevel() {
+        SubLevel subLevel = this.getOwnedHingeSubLevel();
+        return subLevel instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved() ? serverSubLevel : null;
+    }
+
+    private void validateHingeAssemblyOwner() {
+        if (this.level == null || this.level.isClientSide || this.hingeSubLevelId == null) {
+            return;
+        }
+        if (this.linkedPos == null || !this.isHingedHead()) {
+            this.disassembleHingeAssembly();
+            return;
+        }
+        ServerSubLevel hingeSubLevel = this.getHingeServerSubLevel();
+        if (hingeSubLevel == null || this.hingeLinkPos == null) {
+            this.disassembleHingeAssembly();
+            return;
+        }
+
+        if (!this.isHingeAssemblyOwnedByCurrentParent()) {
+            this.discardForeignHingeAssemblyReference();
+            return;
+        }
+
+        Vector3d parentCenter = this.toWorldPosition(this.getContainingSubLevel(), this.localCenterOf(this.worldPosition));
+        Vector3d hingeCenter = this.toWorldPosition(hingeSubLevel, this.localCenterOf(this.hingeLinkPos));
+        if (parentCenter.sub(hingeCenter, new Vector3d()).lengthSquared() > HINGE_OWNER_MAX_DISTANCE_SQUARED) {
+            this.disassembleHingeAssembly();
+        }
+    }
+
     private void disassembleHingeAssembly() {
         this.removeHingeConstraintHandle();
         if (this.level != null && !this.level.isClientSide && this.hingeSubLevelId != null) {
@@ -1127,14 +1430,48 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             }
         }
 
-        if (this.hingeSubLevelId != null || this.hingeLinkPos != null) {
+        if (this.hingeSubLevelId != null || this.hingeLinkPos != null
+                || this.hingeParentSubLevelId != null || this.hingeOwnerPos != null) {
             this.hingeSubLevelId = null;
             this.hingeLinkPos = null;
+            this.hingeParentSubLevelId = null;
+            this.hingeOwnerPos = null;
             this.hingeConstraintAxis = null;
             this.invalidateRenderBoundingBox();
             this.setChanged();
             this.sendData();
         }
+    }
+
+    private boolean isHingeAssemblyOwnedByCurrentParent() {
+        UUID currentParentSubLevelId = this.getContainingSubLevelId();
+        return this.hingeSubLevelId != null
+                && this.hingeLinkPos != null
+                && this.hingeOwnerPos != null
+                && this.worldPosition.equals(this.hingeOwnerPos)
+                && !Objects.equals(currentParentSubLevelId, this.hingeSubLevelId)
+                && Objects.equals(currentParentSubLevelId, this.hingeParentSubLevelId);
+    }
+
+    /**
+     * Drops a copied or stale runtime reference without touching the referenced sublevel.
+     * The referenced sublevel may still belong to another loaded structure.
+     */
+    private void discardForeignHingeAssemblyReference() {
+        this.removeHingeConstraintHandle();
+        if (this.hingeSubLevelId == null && this.hingeLinkPos == null
+                && this.hingeParentSubLevelId == null && this.hingeOwnerPos == null) {
+            return;
+        }
+
+        this.hingeSubLevelId = null;
+        this.hingeLinkPos = null;
+        this.hingeParentSubLevelId = null;
+        this.hingeOwnerPos = null;
+        this.hingeConstraintAxis = null;
+        this.invalidateRenderBoundingBox();
+        this.setChanged();
+        this.sendData();
     }
 
     private void removeHingeConstraintHandle() {
@@ -1155,21 +1492,25 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     private void applyLinkReference(BlockPos pos, @Nullable UUID subLevelId) {
-        this.applyLinkReference(pos, subLevelId, this.renderOwner, this.hasRenderOwnerPreference, this.creativeLink);
+        this.applyLinkReference(pos, subLevelId, this.renderOwner, this.hasRenderOwnerPreference,
+                this.creativeLink, this.giantHydraulicLink);
     }
 
     private void applyLinkReference(BlockPos pos, @Nullable UUID subLevelId, boolean renderOwner, boolean hasRenderOwnerPreference) {
-        this.applyLinkReference(pos, subLevelId, renderOwner, hasRenderOwnerPreference, this.creativeLink);
+        this.applyLinkReference(pos, subLevelId, renderOwner, hasRenderOwnerPreference,
+                this.creativeLink, this.giantHydraulicLink);
     }
 
     private void applyLinkReference(BlockPos pos, @Nullable UUID subLevelId, boolean renderOwner,
-                                    boolean hasRenderOwnerPreference, boolean creativeLink) {
+                                    boolean hasRenderOwnerPreference, boolean creativeLink,
+                                    boolean giantHydraulicLink) {
         if (this.linkedPos != null
                 && this.linkedPos.equals(pos)
                 && Objects.equals(this.linkedSubLevelId, subLevelId)
                 && this.renderOwner == renderOwner
                 && this.hasRenderOwnerPreference == hasRenderOwnerPreference
-                && this.creativeLink == creativeLink) {
+                && this.creativeLink == creativeLink
+                && this.giantHydraulicLink == giantHydraulicLink) {
             return;
         }
 
@@ -1178,6 +1519,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         this.renderOwner = renderOwner;
         this.hasRenderOwnerPreference = hasRenderOwnerPreference;
         this.creativeLink = creativeLink;
+        this.giantHydraulicLink = giantHydraulicLink;
+        this.giantHydraulicPhysics = GiantHydraulicPhysics.State.empty();
         this.clearCachedLinkedHead();
         this.snappedConnectionRollOffset = Double.NaN;
         this.invalidateRenderBoundingBox();
@@ -1215,7 +1558,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             currentLength = Math.sqrt(this.distanceSquaredTo(other));
         }
 
-        int currentLengthTenths = clampExpectedLengthTenths((int) Math.round(currentLength * 10.0D));
+        int currentLengthTenths = this.clampExpectedLengthTenthsForLink((int) Math.round(currentLength * 10.0D));
         this.setExpectedLengthTenths(currentLengthTenths);
         other.setExpectedLengthTenths(currentLengthTenths);
         double currentLengthBlocks = currentLengthTenths / 10.0D;
@@ -1225,10 +1568,19 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         other.expectedLengthTransitionPending = false;
         this.effectiveReturnForce = 0.0D;
         other.effectiveReturnForce = 0.0D;
-        this.redstoneMinLengthTenths = MIN_EXPECTED_LENGTH_TENTHS;
-        this.redstoneMaxLengthTenths = MAX_EXPECTED_LENGTH_TENTHS;
-        other.redstoneMinLengthTenths = MIN_EXPECTED_LENGTH_TENTHS;
-        other.redstoneMaxLengthTenths = MAX_EXPECTED_LENGTH_TENTHS;
+        this.linkWarmupTicks = LINK_WARMUP_TICKS;
+        other.linkWarmupTicks = LINK_WARMUP_TICKS;
+        int minimumLength = getMinExpectedLengthTenths(this.giantHydraulicLink);
+        this.settings.applyRedstoneLengthRange(minimumLength, getMaxExpectedLengthTenths());
+        other.settings.applyRedstoneLengthRange(minimumLength, getMaxExpectedLengthTenths());
+        if (this.giantHydraulicLink) {
+            this.giantHydraulicSettings.applyBase(GiantHydraulicSettingsState.DEFAULT_FLOW_LITRES_PER_MINUTE,
+                    false, currentLengthTenths, GiantHydraulicSettingsState.DEFAULT_PRESSURE_BAR);
+            other.giantHydraulicSettings.applyBase(GiantHydraulicSettingsState.DEFAULT_FLOW_LITRES_PER_MINUTE,
+                    false, currentLengthTenths, GiantHydraulicSettingsState.DEFAULT_PRESSURE_BAR);
+            this.giantHydraulicSettings.applyRedstoneRange(30, getMaxExpectedLengthTenths());
+            other.giantHydraulicSettings.applyRedstoneRange(30, getMaxExpectedLengthTenths());
+        }
     }
 
     private void clearLinkInternal(boolean updateOther) {
@@ -1248,10 +1600,13 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         this.linkedPos = null;
         this.linkedSubLevelId = null;
         this.creativeLink = false;
+        this.giantHydraulicLink = false;
         this.clearCachedLinkedHead();
         this.hasRenderOwnerPreference = false;
         this.renderOwner = false;
         this.expectedLengthApproachMultiplier = 1.0D;
+        this.giantHydraulicPhysics = GiantHydraulicPhysics.State.empty();
+        this.linkWarmupTicks = 0;
         this.snappedConnectionRollOffset = Double.NaN;
         this.invalidateRenderBoundingBox();
         this.setChanged();
@@ -1260,18 +1615,6 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (linkedOther != null) {
             linkedOther.clearLinkInternal(false);
         }
-    }
-
-    private boolean isPreservingLinkForSubLevelMove() {
-        long preserveUntil = this.preserveLinkForSubLevelMoveUntil;
-        if (preserveUntil <= 0L) {
-            return false;
-        }
-        if (System.currentTimeMillis() <= preserveUntil) {
-            return true;
-        }
-        this.preserveLinkForSubLevelMoveUntil = 0L;
-        return false;
     }
 
     private void removeConstraintHandle() {
@@ -1300,7 +1643,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         }
 
         Block.popResource(this.level, this.worldPosition, new ItemStack(
-                this.creativeLink ? ModItems.CREATIVE_HYDRAULIC_ROD.get() : ModItems.HYDRAULIC_ROD.get()));
+                this.giantHydraulicLink ? ModItems.GIANT_HYDRAULIC_ROD.get()
+                        : this.creativeLink ? ModItems.CREATIVE_HYDRAULIC_ROD.get() : ModItems.HYDRAULIC_ROD.get()));
     }
 
     private Vector3d localCenterOf(BlockPos pos) {
@@ -1431,15 +1775,18 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public void setStretchResistance(int value) {
-        this.applySettingsLocal(value, this.freeMode, this.expectedLengthTenths, this.returnForce, true);
+        this.applySettingsLocal(value, this.settings.freeMode(), this.settings.expectedLengthTenths(),
+                this.settings.returnForce(), true);
     }
 
     public void setFreeMode(boolean value) {
-        this.applySettingsLocal(this.stretchResistance, value, this.expectedLengthTenths, this.returnForce, true);
+        this.applySettingsLocal(this.settings.stretchResistance(), value, this.settings.expectedLengthTenths(),
+                this.settings.returnForce(), true);
     }
 
     public void setExpectedLengthTenths(int value) {
-        this.applySettingsLocal(this.stretchResistance, this.freeMode, value, this.returnForce, true);
+        this.applySettingsLocal(this.settings.stretchResistance(), this.settings.freeMode(), value,
+                this.settings.returnForce(), true);
     }
 
     public void setRedstoneLengthRangeAndMirror(int minLengthTenths, int maxLengthTenths) {
@@ -1452,31 +1799,36 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public void setReturnForce(int value) {
-        this.applySettingsLocal(this.stretchResistance, this.freeMode, this.expectedLengthTenths, value, true);
+        this.applySettingsLocal(this.settings.stretchResistance(), this.settings.freeMode(),
+                this.settings.expectedLengthTenths(), value, true);
     }
 
     public int getStretchResistance() {
-        return this.stretchResistance;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.flowLitresPerMinute()
+                : this.settings.stretchResistance();
     }
 
     public boolean isFreeMode() {
-        return this.freeMode;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.vented() : this.settings.freeMode();
     }
 
     public int getExpectedLengthTenths() {
-        return this.expectedLengthTenths;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.targetLengthTenths()
+                : this.settings.expectedLengthTenths();
     }
 
     public int getRedstoneMinLengthTenths() {
-        return this.redstoneMinLengthTenths;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.redstoneMinLengthTenths()
+                : this.settings.redstoneMinLengthTenths();
     }
 
     public int getRedstoneMaxLengthTenths() {
-        return this.redstoneMaxLengthTenths;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.redstoneMaxLengthTenths()
+                : this.settings.redstoneMaxLengthTenths();
     }
 
     public int getReturnForce() {
-        return this.returnForce;
+        return this.giantHydraulicLink ? this.giantHydraulicSettings.pressureBar() : this.settings.returnForce();
     }
 
     public boolean isExpectedLengthControlledByRegulator() {
@@ -1511,14 +1863,50 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     public int getExpectedLengthTenthsForRedstoneSignal(int signal) {
         int clampedSignal = Mth.clamp(signal, 0, 15);
-        return this.redstoneMinLengthTenths
-                + Math.round((this.redstoneMaxLengthTenths - this.redstoneMinLengthTenths) * (clampedSignal / 15.0F));
+        int minLength = this.getRedstoneMinLengthTenths();
+        int maxLength = this.getRedstoneMaxLengthTenths();
+        return minLength + Math.round((maxLength - minLength) * (clampedSignal / 15.0F));
     }
 
     public void applySyncedSettings(int stretchResistance, boolean freeMode, int expectedLengthTenths, int returnForce,
                                     int redstoneMinLengthTenths, int redstoneMaxLengthTenths) {
+        if (this.giantHydraulicLink) {
+            this.applyGiantHydraulicSettingsLocal(stretchResistance, freeMode, expectedLengthTenths, returnForce, false);
+            this.applyGiantHydraulicRedstoneRangeLocal(redstoneMinLengthTenths, redstoneMaxLengthTenths, false);
+            return;
+        }
         this.applySettingsLocal(stretchResistance, freeMode, expectedLengthTenths, returnForce, false);
         this.applyRedstoneLengthRangeLocal(redstoneMinLengthTenths, redstoneMaxLengthTenths, false);
+    }
+
+    public void setGiantHydraulicSettingsAndMirror(int flowLitresPerMinute, boolean vented, int targetLengthTenths,
+                                                    int pressureBar, int redstoneMinLengthTenths,
+                                                    int redstoneMaxLengthTenths) {
+        if (!this.giantHydraulicLink) {
+            return;
+        }
+        this.applyGiantHydraulicSettingsLocal(flowLitresPerMinute, vented, targetLengthTenths, pressureBar, true);
+        this.applyGiantHydraulicRedstoneRangeLocal(redstoneMinLengthTenths, redstoneMaxLengthTenths, true);
+        HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
+        if (other != null && other.references(this) && other.giantHydraulicLink) {
+            other.applyGiantHydraulicSettingsLocal(flowLitresPerMinute, vented, targetLengthTenths, pressureBar, true);
+            other.applyGiantHydraulicRedstoneRangeLocal(redstoneMinLengthTenths, redstoneMaxLengthTenths, true);
+        }
+    }
+
+    public void setGiantHydraulicTargetAndMirror(int targetLengthTenths, double approachMultiplier) {
+        if (!this.giantHydraulicLink) {
+            return;
+        }
+        this.applyGiantHydraulicSettingsLocal(this.giantHydraulicSettings.flowLitresPerMinute(), false,
+                targetLengthTenths, this.giantHydraulicSettings.pressureBar(), true);
+        this.applyExpectedLengthApproachMultiplierLocal(approachMultiplier);
+        HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
+        if (other != null && other.references(this) && other.giantHydraulicLink) {
+            other.applyGiantHydraulicSettingsLocal(other.giantHydraulicSettings.flowLitresPerMinute(), false,
+                    targetLengthTenths, other.giantHydraulicSettings.pressureBar(), true);
+            other.applyExpectedLengthApproachMultiplierLocal(approachMultiplier);
+        }
     }
 
     public void setSettingsAndMirror(int stretchResistance, boolean freeMode, int expectedLengthTenths, int returnForce) {
@@ -1547,24 +1935,16 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     private void applySettingsLocal(int stretchResistance, boolean freeMode, int expectedLengthTenths, int returnForce, boolean notify) {
-        boolean wasFreeMode = this.freeMode;
         boolean effectiveFreeMode = this.creativeLink ? false : freeMode;
         int clampedStretchResistance = this.creativeLink ? 0 : clampStretchResistance(stretchResistance);
-        int clampedExpectedLengthTenths = clampExpectedLengthTenths(expectedLengthTenths);
+        int clampedExpectedLengthTenths = this.clampExpectedLengthTenthsForLink(expectedLengthTenths);
         int clampedReturnForce = this.creativeLink ? 0 : clampReturnForce(returnForce);
         boolean creativeTargetChanged = this.creativeLink
                 && this.linkedPos != null
-                && this.expectedLengthTenths != clampedExpectedLengthTenths;
-        boolean changed = this.stretchResistance != clampedStretchResistance
-                || this.freeMode != effectiveFreeMode
-                || this.expectedLengthTenths != clampedExpectedLengthTenths
-                || this.returnForce != clampedReturnForce;
-
-        this.stretchResistance = clampedStretchResistance;
-        this.freeMode = effectiveFreeMode;
-        this.expectedLengthTenths = clampedExpectedLengthTenths;
-        this.returnForce = clampedReturnForce;
-        if (wasFreeMode && !effectiveFreeMode) {
+                && this.settings.expectedLengthTenths() != clampedExpectedLengthTenths;
+        HydraulicSettingsState.Change change = this.settings.applyBaseSettings(
+                clampedStretchResistance, effectiveFreeMode, clampedExpectedLengthTenths, clampedReturnForce);
+        if (change.leftFreeMode()) {
             this.expectedLengthTransitionPending = true;
             this.effectiveReturnForce = 0.0D;
         } else if (effectiveFreeMode) {
@@ -1573,7 +1953,20 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         if (creativeTargetChanged) {
             this.scheduleCreativeServoWake();
         }
-        if (notify && changed) {
+        if (notify && change.changed()) {
+            this.setChanged();
+            this.sendData();
+        }
+    }
+
+    private void applyGiantHydraulicSettingsLocal(int flowLitresPerMinute, boolean vented,
+                                                   int targetLengthTenths, int pressureBar, boolean notify) {
+        boolean changed = this.giantHydraulicSettings.applyBase(flowLitresPerMinute, vented,
+                this.clampExpectedLengthTenthsForLink(targetLengthTenths), pressureBar);
+        if (changed) {
+            this.wakeGiantHydraulicBodiesNow();
+        }
+        if (changed && notify) {
             this.setChanged();
             this.sendData();
         }
@@ -1584,147 +1977,132 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     private void applyRedstoneLengthRangeLocal(int minLengthTenths, int maxLengthTenths, boolean notify) {
-        int clampedMin = clampExpectedLengthTenths(minLengthTenths);
-        int clampedMax = clampExpectedLengthTenths(maxLengthTenths);
-        if (clampedMin > clampedMax) {
-            int swapped = clampedMin;
-            clampedMin = clampedMax;
-            clampedMax = swapped;
-        }
-
-        boolean changed = this.redstoneMinLengthTenths != clampedMin
-                || this.redstoneMaxLengthTenths != clampedMax;
-        this.redstoneMinLengthTenths = clampedMin;
-        this.redstoneMaxLengthTenths = clampedMax;
+        int minimum = getMinExpectedLengthTenths(this.giantHydraulicLink);
+        boolean changed = this.settings.applyRedstoneLengthRange(
+                Math.max(minimum, minLengthTenths), Math.max(minimum, maxLengthTenths));
         if (notify && changed) {
             this.setChanged();
             this.sendData();
         }
     }
 
-    private void normalizeRedstoneLengthRange() {
-        this.applyRedstoneLengthRangeLocal(this.redstoneMinLengthTenths, this.redstoneMaxLengthTenths, false);
+    private void applyGiantHydraulicRedstoneRangeLocal(int minLengthTenths, int maxLengthTenths, boolean notify) {
+        boolean changed = this.giantHydraulicSettings.applyRedstoneRange(
+                Math.max(getMinExpectedLengthTenths(true), minLengthTenths),
+                Math.min(getMaxExpectedLengthTenths(), maxLengthTenths));
+        if (changed && notify) {
+            this.setChanged();
+            this.sendData();
+        }
+    }
+
+    private void normalizeConfiguredSettings(boolean notify) {
+        boolean changed = this.settings.normalize();
+        if (this.giantHydraulicLink) {
+            changed |= this.giantHydraulicSettings.applyBase(this.giantHydraulicSettings.flowLitresPerMinute(),
+                    this.giantHydraulicSettings.vented(), this.giantHydraulicSettings.targetLengthTenths(),
+                    this.giantHydraulicSettings.pressureBar());
+            changed |= this.giantHydraulicSettings.applyRedstoneRange(
+                    Math.max(getMinExpectedLengthTenths(true), this.giantHydraulicSettings.redstoneMinLengthTenths()),
+                    Math.min(getMaxExpectedLengthTenths(), this.giantHydraulicSettings.redstoneMaxLengthTenths()));
+        }
+        if (notify && changed) {
+            this.setChanged();
+            this.sendData();
+        }
+    }
+
+    private int clampExpectedLengthTenthsForLink(int value) {
+        return this.giantHydraulicLink
+                ? Math.max(getMinExpectedLengthTenths(true), clampExpectedLengthTenths(value))
+                : clampExpectedLengthTenths(value);
     }
 
     public static int clampStretchResistance(int value) {
-        return Math.max(0, Math.min(MAX_STRETCH_RESISTANCE_VALUE, value));
+        return HydraulicSettings.clampStretchResistance(value);
     }
 
     public static int clampReturnForce(int value) {
-        return Math.max(0, Math.min(MAX_RETURN_FORCE_VALUE, value));
+        return HydraulicSettings.clampReturnForce(value);
     }
 
     public static int clampExpectedLengthTenths(int value) {
-        return Math.max(MIN_EXPECTED_LENGTH_TENTHS, Math.min(MAX_EXPECTED_LENGTH_TENTHS, value));
+        return HydraulicSettings.clampExpectedLengthTenths(value);
     }
 
     public static double clampExpectedLengthApproachMultiplier(double value) {
-        if (!Double.isFinite(value)) {
-            return 1.0D;
-        }
-        return Math.max(MIN_EXPECTED_LENGTH_APPROACH_MULTIPLIER,
-                Math.min(MAX_EXPECTED_LENGTH_APPROACH_MULTIPLIER, value));
+        return HydraulicSettings.clampApproachMultiplier(value);
     }
 
     public static int getMaxSettingValue() {
-        return MAX_RETURN_FORCE_VALUE;
+        return getMaxReturnForceValue();
     }
 
     public static int getMaxStretchResistanceValue() {
-        return MAX_STRETCH_RESISTANCE_VALUE;
+        return HydraulicSettings.maxStretchResistance();
     }
 
     public static int getMaxStretchResistanceLevel() {
-        return 20;
+        return HydraulicSettings.maxStretchResistanceLevel();
     }
 
     public static int getStretchResistanceWarningLevel() {
-        return 10;
+        return HydraulicSettings.stretchResistanceWarningLevel();
     }
 
     public static int stretchResistanceFromLevel(int level) {
-        int clampedLevel = Math.max(0, Math.min(getMaxStretchResistanceLevel(), level));
-        if (clampedLevel <= 0) {
-            return 0;
-        }
-        int warningLevel = getStretchResistanceWarningLevel();
-        if (clampedLevel <= warningLevel) {
-            double normalized = clampedLevel / (double) warningLevel;
-            return clampStretchResistance((int) Math.round(1024.0D * normalized * normalized));
-        }
-
-        double normalized = (clampedLevel - warningLevel) / (double) (getMaxStretchResistanceLevel() - warningLevel);
-        double multiplier = Math.pow(MAX_STRETCH_RESISTANCE_VALUE / 1024.0D, normalized);
-        return clampStretchResistance((int) Math.round(1024.0D * multiplier));
+        return HydraulicSettings.stretchResistanceFromLevel(level);
     }
 
     public static int stretchResistanceToLevel(int resistance) {
-        int clampedResistance = clampStretchResistance(resistance);
-        if (clampedResistance <= 0) {
-            return 0;
-        }
-        int warningLevel = getStretchResistanceWarningLevel();
-        if (clampedResistance <= 1024) {
-            double normalized = Math.sqrt(clampedResistance / 1024.0D);
-            return Math.max(0, Math.min(warningLevel, (int) Math.round(normalized * warningLevel)));
-        }
-
-        double normalized = Math.log(clampedResistance / 1024.0D)
-                / Math.log(MAX_STRETCH_RESISTANCE_VALUE / 1024.0D);
-        double level = warningLevel + Math.max(0.0D, normalized) * (getMaxStretchResistanceLevel() - warningLevel);
-        return Math.max(warningLevel, Math.min(getMaxStretchResistanceLevel(), (int) Math.round(level)));
+        return HydraulicSettings.stretchResistanceToLevel(resistance);
     }
 
     public static int getMaxReturnForceValue() {
-        return MAX_RETURN_FORCE_VALUE;
+        return HydraulicSettings.maxReturnForce();
     }
 
     public static int getMaxReturnForceLevel() {
-        return 20;
+        return HydraulicSettings.maxReturnForceLevel();
     }
 
     public static int returnForceFromLevel(int level) {
-        int clampedLevel = Math.max(0, Math.min(getMaxReturnForceLevel(), level));
-        if (clampedLevel <= 0) {
-            return 0;
-        }
-        double normalized = clampedLevel / (double) getMaxReturnForceLevel();
-        return clampReturnForce((int) Math.round(MAX_RETURN_FORCE_VALUE * normalized * normalized));
+        return HydraulicSettings.returnForceFromLevel(level);
     }
 
     public static int returnForceToLevel(int force) {
-        int clampedForce = clampReturnForce(force);
-        if (clampedForce <= 0) {
-            return 0;
-        }
-        double normalized = Math.sqrt(clampedForce / (double) MAX_RETURN_FORCE_VALUE);
-        return Math.max(0, Math.min(getMaxReturnForceLevel(), (int) Math.round(normalized * getMaxReturnForceLevel())));
+        return HydraulicSettings.returnForceToLevel(force);
     }
 
     public static int getMinExpectedLengthTenths() {
-        return MIN_EXPECTED_LENGTH_TENTHS;
+        return HydraulicSettings.minExpectedLengthTenths();
+    }
+
+    public static int getMinExpectedLengthTenths(boolean giantHydraulic) {
+        return giantHydraulic ? (int) Math.round(GiantHydraulicPhysics.MINIMUM_LENGTH * 10.0D)
+                : getMinExpectedLengthTenths();
     }
 
     public static int getMaxExpectedLengthTenths() {
-        return MAX_EXPECTED_LENGTH_TENTHS;
+        return HydraulicSettings.maxExpectedLengthTenths();
     }
 
     public static double getMaxLinkLength() {
-        return BREAK_LINK_LENGTH;
+        return AeroUniversalJointConfig.hydraulicRodBreakLinkLength();
     }
 
     private static double clampEffectiveExpectedLength(double value) {
         if (!Double.isFinite(value)) {
-            return MIN_LINK_LENGTH;
+            return AeroUniversalJointConfig.hydraulicRodMinLinkLength();
         }
-        return Math.max(0.0D, Math.min(BREAK_LINK_LENGTH, value));
+        return Math.max(0.0D, Math.min(AeroUniversalJointConfig.hydraulicRodBreakLinkLength(), value));
     }
 
     private static double clampEffectiveReturnForce(double value) {
         if (!Double.isFinite(value)) {
             return 0.0D;
         }
-        return Math.max(0.0D, Math.min(MAX_RETURN_FORCE_VALUE, value));
+        return Math.max(0.0D, Math.min(getMaxReturnForceValue(), value));
     }
 
     public static String formatPlainValue(int value) {
@@ -1732,28 +2110,14 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     public static String formatTenths(int value) {
-        int clamped = clampExpectedLengthTenths(value);
-        return clamped % 10 == 0
-                ? Integer.toString(clamped / 10)
-                : String.format(java.util.Locale.ROOT, "%.1f", clamped / 10.0D);
+        return HydraulicSettings.formatTenths(value);
     }
 
     public static double calculateExpectedReturnForce(int returnForce, double deviation) {
-        return calculateExpectedReturnForce((double) clampReturnForce(returnForce), deviation);
+        return HydraulicLengthControl.calculateReturnForce(clampReturnForce(returnForce), deviation);
     }
 
-    private static double calculateExpectedReturnForce(double returnForce, double deviation) {
-        double clampedReturnForce = clampEffectiveReturnForce(returnForce);
-        double magnitude = Math.abs(deviation);
-        if (clampedReturnForce <= 0 || magnitude <= MIN_PHYSICS_DISTANCE) {
-            return 0.0D;
-        }
-        double curvedMagnitude = Math.expm1(magnitude * RETURN_FORCE_CURVE);
-        return Math.signum(deviation) * clampedReturnForce * RETURN_FORCE_PER_UNIT * curvedMagnitude;
-    }
-
-    private void applyLengthLimits(HydraulicConnectionHeadBlockEntity other,
-                                   ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle,
+    private void applyLengthLimits(ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle,
                                    Vector3d ownLocal, Vector3d ownWorld,
                                    @Nullable ServerSubLevel otherSubLevel, Vector3d otherLocal, Vector3d otherWorld,
                                    Vector3d worldDirection, double timeStep) {
@@ -1764,7 +2128,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
         Vector3d connection = otherWorld.sub(ownWorld, new Vector3d());
         double actualDistance = connection.length();
         this.updateLinkStrainEffect(actualDistance);
-        if (actualDistance > BREAK_LINK_LENGTH) {
+        if (actualDistance > AeroUniversalJointConfig.hydraulicRodBreakLinkLength()) {
             this.breakOverstretchedLink();
             return;
         }
@@ -1775,71 +2139,116 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             double effectiveExpectedLength = this.updateEffectiveExpectedLength(distance, timeStep);
             this.refreshRodDampingMotor();
             this.wakeCreativeServoBodiesIfNeeded(distance, effectiveExpectedLength, ownSubLevel, otherSubLevel);
-            this.enforceCreativeLengthLimits(distance, correctionDirection, ownSubLevel, ownHandle,
+            this.applyHardLengthLimits(distance, correctionDirection, ownSubLevel, ownHandle,
+                    ownLocal, otherSubLevel, otherLocal, timeStep,
+                    AeroUniversalJointConfig.hydraulicRodMinLinkLength());
+            return;
+        }
+
+        if (this.giantHydraulicLink) {
+            this.applyGiantHydraulicForce(distance, correctionDirection, ownSubLevel, ownHandle,
                     ownLocal, otherSubLevel, otherLocal, timeStep);
             return;
         }
 
         double springImpulseMagnitude = 0.0D;
-        if (!this.freeMode) {
+        if (!this.settings.freeMode()) {
             double effectiveExpectedLength = this.updateEffectiveExpectedLength(distance, timeStep);
             double effectiveReturnForce = this.updateEffectiveReturnForce(timeStep);
             springImpulseMagnitude += calculateExpectedLengthReturnImpulse(
                     distance, effectiveExpectedLength, effectiveReturnForce, timeStep);
         }
 
-        springImpulseMagnitude = clampImpulse(springImpulseMagnitude, MAX_COMBINED_LENGTH_CONTROL_IMPULSE);
+        springImpulseMagnitude = HydraulicLengthControl.clampImpulse(springImpulseMagnitude,
+                AeroUniversalJointConfig.hydraulicRodMaxCombinedLengthControlImpulse());
         if (Math.abs(springImpulseMagnitude) > 1.0E-8D) {
             Vector3d lengthControl = new Vector3d(correctionDirection).mul(springImpulseMagnitude);
             this.applyLengthImpulse(ownSubLevel, ownHandle, ownLocal, otherSubLevel, otherLocal, lengthControl);
         }
 
-        double correctionSign;
-        double excess;
-        if (distance < MIN_LINK_LENGTH) {
-            correctionSign = -1.0D;
-            excess = MIN_LINK_LENGTH - distance;
-        } else if (distance > MAX_LINK_LENGTH) {
-            correctionSign = 1.0D;
-            excess = distance - MAX_LINK_LENGTH;
-        } else {
-            return;
-        }
-
-        double springMagnitude = LENGTH_LIMIT_STIFFNESS * Math.expm1(excess * LENGTH_LIMIT_CURVE);
-        double impulseMagnitude = springMagnitude * timeStep;
-        if (impulseMagnitude <= 0.0D) {
-            return;
-        }
-        impulseMagnitude = Math.min(impulseMagnitude, MAX_LENGTH_LIMIT_IMPULSE);
-
-        Vector3d worldImpulse = correctionDirection.mul(impulseMagnitude * correctionSign);
-        this.applyLengthImpulse(ownSubLevel, ownHandle, ownLocal, otherSubLevel, otherLocal, worldImpulse);
+        this.applyHardLengthLimits(distance, correctionDirection, ownSubLevel, ownHandle,
+                ownLocal, otherSubLevel, otherLocal, timeStep, AeroUniversalJointConfig.hydraulicRodMinLinkLength());
     }
 
-    private void enforceCreativeLengthLimits(double distance, Vector3d correctionDirection,
-                                             ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle,
-                                             Vector3d ownLocal, @Nullable ServerSubLevel otherSubLevel,
-                                             Vector3d otherLocal, double timeStep) {
-        double correctionSign;
-        double excess;
-        if (distance < MIN_LINK_LENGTH) {
-            correctionSign = -1.0D;
-            excess = MIN_LINK_LENGTH - distance;
-        } else if (distance > MAX_LINK_LENGTH) {
-            correctionSign = 1.0D;
-            excess = distance - MAX_LINK_LENGTH;
-        } else {
+    private void applyGiantHydraulicForce(double distance, Vector3d correctionDirection,
+                                          ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle,
+                                          Vector3d ownLocal, @Nullable ServerSubLevel otherSubLevel,
+                                          Vector3d otherLocal, double timeStep) {
+        double targetDistance = this.updateGiantHydraulicExpectedLength(distance, timeStep);
+        GiantHydraulicPhysics.Result result = GiantHydraulicPhysics.step(
+                this.giantHydraulicPhysics, distance, targetDistance, this.giantHydraulicSettings.vented(),
+                this.giantHydraulicSettings.pressureBar(), this.giantHydraulicSettings.flowLitresPerMinute(), timeStep);
+        this.giantHydraulicPhysics = result.state();
+        boolean closedCenter = Math.abs(result.valve()) <= 1.0E-8D;
+        double maximumForce = this.giantHydraulicSettings.pressureBar()
+                * HydraulicCylinderControl.CAP_FORCE_AREA;
+        if (closedCenter) {
+            maximumForce = Math.max(maximumForce,
+                    HydraulicCylinderControl.MAX_WORKING_PRESSURE_BAR * HydraulicCylinderControl.CAP_FORCE_AREA);
+        }
+        this.refreshGiantHydraulicMotor(result.motorTargetDistance(), maximumForce, closedCenter);
+        this.updateGiantHydraulicOverloadEffect(result, targetDistance, distance);
+        this.wakeGiantHydraulicBodiesIfNeeded(distance, targetDistance, ownSubLevel, otherSubLevel);
+    }
+
+    private void updateGiantHydraulicOverloadEffect(GiantHydraulicPhysics.Result result,
+                                                     double targetDistance, double distance) {
+        double valve = result.valve();
+        double activePressure = valve > 0.0D
+                ? result.state().pressure().capPressure()
+                : result.state().pressure().rodPressure();
+        boolean overloaded = !this.giantHydraulicSettings.vented()
+                && this.giantHydraulicSettings.flowLitresPerMinute() > 0
+                && Math.abs(valve) >= 0.15D
+                && Math.abs(targetDistance - distance) >= 0.125D
+                && Math.abs(result.velocity()) <= 0.025D
+                && activePressure >= this.giantHydraulicSettings.pressureBar() * 0.92D;
+        if (this.giantHydraulicOverloadEffect == overloaded) {
             return;
         }
 
-        double springMagnitude = LENGTH_LIMIT_STIFFNESS * Math.expm1(excess * LENGTH_LIMIT_CURVE);
-        double impulseMagnitude = Math.min(springMagnitude * timeStep, MAX_LENGTH_LIMIT_IMPULSE);
-        if (impulseMagnitude <= 0.0D) {
+        this.giantHydraulicOverloadEffect = overloaded;
+        HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
+        boolean stretched = other != null && other.references(this)
+                && this.distanceSquaredTo(other) >= Math.pow(AeroUniversalJointConfig.hydraulicRodStrainLinkLength(), 2.0D);
+        this.setLinkStrainState(overloaded || stretched);
+        if (other != null && other.references(this)) {
+            other.giantHydraulicOverloadEffect = overloaded;
+            other.setLinkStrainState(overloaded || stretched);
+        }
+    }
+
+    private void refreshGiantHydraulicMotor(double targetDistance, double maximumForce, boolean closedCenter) {
+        if (this.constraintHandle == null || !this.constraintHandle.isValid()) {
             return;
         }
 
-        Vector3d worldImpulse = new Vector3d(correctionDirection).mul(impulseMagnitude * correctionSign);
+        this.constraintHandle.setLimit(ConstraintJointAxis.LINEAR_Y,
+                GiantHydraulicPhysics.MINIMUM_LENGTH, AeroUniversalJointConfig.hydraulicRodMaxLinkLength());
+
+        if (this.giantHydraulicSettings.vented() || maximumForce <= 1.0E-8D) {
+            this.constraintHandle.setMotor(ConstraintJointAxis.LINEAR_Y, 0.0D,
+                    0.0D, 0.0D, false, 0.0D);
+            return;
+        }
+
+        this.constraintHandle.setMotor(ConstraintJointAxis.LINEAR_Y, targetDistance,
+                GiantHydraulicPhysics.MOTOR_POSITION_STIFFNESS,
+                closedCenter ? GIANT_HYDRAULIC_HOLD_DAMPING : GiantHydraulicPhysics.MOTOR_POSITION_DAMPING,
+                true, maximumForce);
+    }
+
+    private void applyHardLengthLimits(double distance, Vector3d correctionDirection,
+                                       ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle,
+                                       Vector3d ownLocal, @Nullable ServerSubLevel otherSubLevel,
+                                       Vector3d otherLocal, double timeStep, double minimumLength) {
+        double impulseMagnitude = HydraulicLengthControl.calculateHardLimitImpulse(distance, timeStep,
+                minimumLength, AeroUniversalJointConfig.hydraulicRodMaxLinkLength());
+        if (Math.abs(impulseMagnitude) <= 1.0E-8D) {
+            return;
+        }
+
+        Vector3d worldImpulse = new Vector3d(correctionDirection).mul(impulseMagnitude);
         this.applyLengthImpulse(ownSubLevel, ownHandle, ownLocal, otherSubLevel, otherLocal, worldImpulse);
     }
 
@@ -1855,7 +2264,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             return;
         }
 
-        double targetDistance = this.expectedLengthTenths / 10.0D;
+        double targetDistance = this.getExpectedLengthTenths() / 10.0D;
         boolean targetStillApproaching = Math.abs(effectiveExpectedLength - targetDistance) > CREATIVE_LENGTH_WAKE_EPSILON;
         boolean servoStillPulling = Math.abs(distance - effectiveExpectedLength) > CREATIVE_LENGTH_WAKE_EPSILON;
         if (!targetStillApproaching && !servoStillPulling) {
@@ -1886,11 +2295,45 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             return;
         }
 
-        long gameTime = this.level.getGameTime();
-        if (this.lastCreativeServoWakeGameTime == gameTime) {
+        this.wakeHydraulicBodies(ownSubLevel, otherSubLevel);
+    }
+
+    private void wakeGiantHydraulicBodiesIfNeeded(double distance, double targetDistance,
+                                                   @Nullable ServerSubLevel ownSubLevel,
+                                                   @Nullable ServerSubLevel otherSubLevel) {
+        if (this.level == null || this.level.isClientSide || !this.giantHydraulicLink
+                || this.giantHydraulicSettings.vented() || this.giantHydraulicSettings.flowLitresPerMinute() <= 0
+                || Math.abs(targetDistance - distance) <= 1.0D / 128.0D) {
             return;
         }
-        this.lastCreativeServoWakeGameTime = gameTime;
+
+        this.wakeHydraulicBodies(ownSubLevel, otherSubLevel);
+    }
+
+    private void wakeGiantHydraulicBodiesNow() {
+        if (this.level == null || this.level.isClientSide || !this.giantHydraulicLink) {
+            return;
+        }
+
+        ServerSubLevel ownSubLevel = this.getRodConstraintServerSubLevel(this.getContainingServerSubLevel());
+        HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
+        ServerSubLevel otherSubLevel = other != null
+                ? other.getRodConstraintServerSubLevel(other.getContainingServerSubLevel())
+                : null;
+        this.wakeHydraulicBodies(ownSubLevel, otherSubLevel);
+    }
+
+    private void wakeHydraulicBodies(@Nullable ServerSubLevel ownSubLevel,
+                                     @Nullable ServerSubLevel otherSubLevel) {
+        if (this.level == null || this.level.isClientSide) {
+            return;
+        }
+
+        long gameTime = this.level.getGameTime();
+        if (this.lastHydraulicServoWakeGameTime == gameTime) {
+            return;
+        }
+        this.lastHydraulicServoWakeGameTime = gameTime;
 
         PhysicsPipeline pipeline = SubLevelPhysicsSystem.require(this.level).getPipeline();
         if (ownSubLevel != null && !ownSubLevel.isRemoved()) {
@@ -1910,7 +2353,8 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     }
 
     private void updateLinkStrainEffect(double actualDistance) {
-        boolean strained = actualDistance >= LINK_STRAIN_LENGTH;
+        boolean strained = this.giantHydraulicOverloadEffect
+                || actualDistance >= AeroUniversalJointConfig.hydraulicRodStrainLinkLength();
         this.setLinkStrainState(strained);
         HydraulicConnectionHeadBlockEntity other = this.resolveLinkedConnectionHead();
         if (other != null && other.references(this)) {
@@ -1957,21 +2401,7 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     private double calculateExpectedLengthReturnImpulse(double distance, double targetDistance,
                                                        double effectiveReturnForce, double timeStep) {
-        if (effectiveReturnForce <= 0.0D) {
-            return 0.0D;
-        }
-
-        double deviation = distance - targetDistance;
-        if (Math.abs(deviation) <= MIN_PHYSICS_DISTANCE) {
-            return 0.0D;
-        }
-
-        double restoringForce = calculateExpectedReturnForce(effectiveReturnForce, deviation);
-        double impulseMagnitude = restoringForce * timeStep;
-        if (Math.abs(impulseMagnitude) <= 1.0E-8D) {
-            return 0.0D;
-        }
-        return clampImpulse(impulseMagnitude, MAX_EXPECTED_RETURN_IMPULSE);
+        return HydraulicLengthControl.calculateReturnImpulse(effectiveReturnForce, distance, targetDistance, timeStep);
     }
 
     private double updateEffectiveExpectedLength(double actualDistance, double timeStep) {
@@ -1981,15 +2411,29 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             return this.effectiveExpectedLengthBlocks;
         }
 
-        double targetDistance = this.expectedLengthTenths / 10.0D;
-        double approachRate = this.creativeLink ? CREATIVE_LENGTH_APPROACH_RATE : EXPECTED_LENGTH_APPROACH_RATE;
+        double targetDistance = this.getExpectedLengthTenths() / 10.0D;
+        double approachRate = this.creativeLink
+                ? CREATIVE_LENGTH_APPROACH_RATE
+                : AeroUniversalJointConfig.hydraulicRodExpectedLengthApproachRate();
         double maxStep = Math.max(0.0D, timeStep) * approachRate * this.expectedLengthApproachMultiplier;
-        this.effectiveExpectedLengthBlocks = approach(this.effectiveExpectedLengthBlocks, targetDistance, maxStep);
+        this.effectiveExpectedLengthBlocks = HydraulicLengthControl.approach(
+                this.effectiveExpectedLengthBlocks, targetDistance, maxStep);
+        return this.effectiveExpectedLengthBlocks;
+    }
+
+    private double updateGiantHydraulicExpectedLength(double actualDistance, double timeStep) {
+        if (this.expectedLengthTransitionPending || !Double.isFinite(this.effectiveExpectedLengthBlocks)) {
+            this.effectiveExpectedLengthBlocks = actualDistance;
+            this.expectedLengthTransitionPending = false;
+            return this.effectiveExpectedLengthBlocks;
+        }
+
+        this.effectiveExpectedLengthBlocks = this.getExpectedLengthTenths() / 10.0D;
         return this.effectiveExpectedLengthBlocks;
     }
 
     private double updateEffectiveReturnForce(double timeStep) {
-        if (this.freeMode) {
+        if (this.settings.freeMode()) {
             this.effectiveReturnForce = 0.0D;
             return 0.0D;
         }
@@ -1998,27 +2442,12 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
             this.effectiveReturnForce = 0.0D;
         }
 
-        double targetForce = clampReturnForce(this.returnForce);
-        double maxStep = Math.max(0.0D, timeStep) * RETURN_FORCE_APPROACH_RATE;
-        this.effectiveReturnForce = clampEffectiveReturnForce(approach(this.effectiveReturnForce, targetForce, maxStep));
+        double targetForce = this.settings.returnForce();
+        double maxStep = Math.max(0.0D, timeStep)
+                * AeroUniversalJointConfig.hydraulicRodReturnForceApproachRate();
+        this.effectiveReturnForce = clampEffectiveReturnForce(HydraulicLengthControl.approach(
+                this.effectiveReturnForce, targetForce, maxStep));
         return this.effectiveReturnForce;
-    }
-
-    private static double approach(double current, double target, double maxStep) {
-        if (current < target) {
-            return Math.min(current + maxStep, target);
-        }
-        return Math.max(current - maxStep, target);
-    }
-
-    private static double clampImpulse(double impulse, double maxMagnitude) {
-        if (impulse > maxMagnitude) {
-            return maxMagnitude;
-        }
-        if (impulse < -maxMagnitude) {
-            return -maxMagnitude;
-        }
-        return impulse;
     }
 
     private static Vector3d clampVector(Vector3d vector, double maxMagnitude) {
@@ -2048,16 +2477,19 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     private void applyLengthImpulse(ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle, Vector3d ownLocal,
                                     @Nullable ServerSubLevel otherSubLevel, Vector3d otherLocal,
                                     Vector3d worldImpulse) {
+        RigidBodyHandle otherHandle = null;
+        if (otherSubLevel != null) {
+            otherHandle = RigidBodyHandle.of(otherSubLevel);
+            if (otherHandle == null || !otherHandle.isValid()) {
+                return;
+            }
+        }
+
         Vector3d ownImpulse = ownSubLevel.logicalPose().transformNormalInverse(worldImpulse, new Vector3d());
         this.lengthForceTotal.applyImpulseAtPoint(ownSubLevel, ownLocal, ownImpulse);
         ownHandle.applyForcesAndReset(this.lengthForceTotal);
 
         if (otherSubLevel == null) {
-            return;
-        }
-
-        RigidBodyHandle otherHandle = RigidBodyHandle.of(otherSubLevel);
-        if (otherHandle == null) {
             return;
         }
 

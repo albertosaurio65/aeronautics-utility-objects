@@ -35,7 +35,8 @@ public final class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(
                             HydraulicConnectionHeadBlockEntity::new,
                             ModBlocks.HYDRAULIC_CONNECTION_HEAD.get(),
-                            ModBlocks.HYDRAULIC_HINGE_HEAD.get()).build(null));
+                            ModBlocks.HYDRAULIC_HINGE_HEAD.get(),
+                            ModBlocks.BRASS_HYDRAULIC_HINGE_HEAD.get()).build(null));
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<HydraulicRegulatorBlockEntity>> HYDRAULIC_REGULATOR =
             BLOCK_ENTITIES.register(

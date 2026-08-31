@@ -2,10 +2,12 @@ package com.enxv.aerouniversaljoint.client;
 
 import com.enxv.aerouniversaljoint.ModBlockEntities;
 import com.enxv.aerouniversaljoint.ModMenuTypes;
+import com.enxv.aerouniversaljoint.content.ponder.AeroUniversalJointPonderPlugin;
 import com.enxv.aerouniversaljoint.content.DampingStressBearingRenderer;
 import com.enxv.aerouniversaljoint.content.HydraulicConnectionHeadRenderer;
 import com.enxv.aerouniversaljoint.content.HydraulicRegulatorRenderer;
 import com.enxv.aerouniversaljoint.content.UniversalJointRenderer;
+import net.createmod.ponder.foundation.PonderIndex;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
@@ -16,10 +18,14 @@ public final class AeroUniversalJointClient {
     }
 
     public static void init(IEventBus modBus) {
+        PonderIndex.addPlugin(new AeroUniversalJointPonderPlugin());
         AeroUniversalJointPartials.init();
         modBus.addListener(AeroUniversalJointClient::registerRenderers);
         modBus.addListener(AeroUniversalJointClient::registerScreens);
         NeoForge.EVENT_BUS.addListener(ConnectionPreviewRenderer::render);
+        NeoForge.EVENT_BUS.addListener(HydraulicRodTargeting::render);
+        NeoForge.EVENT_BUS.addListener(HydraulicRodTargeting::onInteraction);
+        NeoForge.EVENT_BUS.addListener(HydraulicRodTargeting::onClientTick);
         ToolgunCompatibilityNotice.init();
     }
 
@@ -35,4 +41,5 @@ public final class AeroUniversalJointClient {
         event.register(ModMenuTypes.UNIVERSAL_JOINT.get(), UniversalJointScreen::new);
         event.register(ModMenuTypes.HYDRAULIC_CONNECTION_HEAD.get(), HydraulicConnectionHeadScreen::new);
     }
+
 }

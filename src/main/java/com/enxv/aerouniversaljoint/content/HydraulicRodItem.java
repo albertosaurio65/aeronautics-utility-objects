@@ -15,18 +15,28 @@ import net.minecraft.world.level.Level;
 
 public class HydraulicRodItem extends Item {
     private final boolean creative;
+    private final boolean giant;
 
     public HydraulicRodItem(Properties properties) {
-        this(properties, false);
+        this(properties, false, false);
     }
 
     public HydraulicRodItem(Properties properties, boolean creative) {
+        this(properties, creative, false);
+    }
+
+    public HydraulicRodItem(Properties properties, boolean creative, boolean giant) {
         super(properties);
         this.creative = creative;
+        this.giant = giant;
     }
 
     public boolean isCreative() {
         return this.creative;
+    }
+
+    public boolean isGiant() {
+        return this.giant;
     }
 
     @Override

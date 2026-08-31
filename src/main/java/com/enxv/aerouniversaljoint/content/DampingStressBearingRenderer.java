@@ -35,10 +35,8 @@ public class DampingStressBearingRenderer extends KineticBlockEntityRenderer<Dam
         VertexConsumer cutoutBuffer = buffer.getBuffer(RenderType.cutoutMipped());
         KineticBlockEntity headKinetics = be.isAssembled() ? be.getOutputKinetics() : be;
         
-        // Calculate head angle
         float headAngle;
         if (be.isAssembled()) {
-            // When assembled, use actual rotation angle
             Float assembledAngle = computeAssembledHeadAngle(be, partialTicks);
             if (assembledAngle != null) {
                 headAngle = assembledAngle;
@@ -46,7 +44,6 @@ public class DampingStressBearingRenderer extends KineticBlockEntityRenderer<Dam
                 headAngle = getAngleForBe(headKinetics, be.getBlockPos(), axis);
             }
         } else {
-            // When not assembled, head should align with base (angle = 0)
             headAngle = 0.0f;
         }
 

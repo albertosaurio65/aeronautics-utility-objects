@@ -4,6 +4,7 @@ import com.enxv.aerouniversaljoint.content.DampingStressBearingBlock;
 import com.enxv.aerouniversaljoint.content.HydraulicConnectionHeadBlock;
 import com.enxv.aerouniversaljoint.content.HydraulicHingeHeadBlock;
 import com.enxv.aerouniversaljoint.content.HydraulicHingeLinkBlock;
+import com.enxv.aerouniversaljoint.content.BrassHydraulicHingeHeadBlock;
 import com.enxv.aerouniversaljoint.content.HydraulicRegulatorBlock;
 import com.enxv.aerouniversaljoint.content.JointVariant;
 import com.enxv.aerouniversaljoint.content.UniversalJointBlock;
@@ -57,6 +58,15 @@ public final class ModBlocks {
             "hydraulic_hinge_head",
             () -> new HydraulicHingeHeadBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
+                    .strength(3.5f, 6.0f)
+                    .sound(SoundType.METAL)
+                    .requiresCorrectToolForDrops()
+                    .noOcclusion()));
+
+    public static final DeferredBlock<BrassHydraulicHingeHeadBlock> BRASS_HYDRAULIC_HINGE_HEAD = BLOCKS.register(
+            "brass_hydraulic_hinge_head",
+            () -> new BrassHydraulicHingeHeadBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_ORANGE)
                     .strength(3.5f, 6.0f)
                     .sound(SoundType.METAL)
                     .requiresCorrectToolForDrops()

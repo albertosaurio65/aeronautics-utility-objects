@@ -8,6 +8,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
@@ -16,24 +17,33 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
     private final BlockPos blockPos;
     @Nullable
     private final HydraulicConnectionHeadBlockEntity blockEntity;
+    private final boolean rodSettingsMode;
 
     public HydraulicConnectionHeadMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf extraData) {
-        this(containerId, inventory, extraData.readBlockPos());
+        this(containerId, inventory, extraData.readBlockPos(), extraData.readBoolean());
     }
 
     public HydraulicConnectionHeadMenu(int containerId, Inventory inventory, HydraulicConnectionHeadBlockEntity blockEntity) {
-        this(containerId, inventory, blockEntity.getBlockPos(), blockEntity);
+        this(containerId, inventory, blockEntity, false);
     }
 
-    private HydraulicConnectionHeadMenu(int containerId, Inventory inventory, BlockPos blockPos) {
-        this(containerId, inventory, blockPos, resolveBlockEntity(inventory, blockPos));
+    public HydraulicConnectionHeadMenu(int containerId, Inventory inventory,
+                                       HydraulicConnectionHeadBlockEntity blockEntity, boolean rodSettingsMode) {
+        this(containerId, inventory, blockEntity.getBlockPos(), blockEntity, rodSettingsMode);
     }
 
     private HydraulicConnectionHeadMenu(int containerId, Inventory inventory, BlockPos blockPos,
-                                        @Nullable HydraulicConnectionHeadBlockEntity blockEntity) {
+                                        boolean rodSettingsMode) {
+        this(containerId, inventory, blockPos, resolveBlockEntity(inventory, blockPos), rodSettingsMode);
+    }
+
+    private HydraulicConnectionHeadMenu(int containerId, Inventory inventory, BlockPos blockPos,
+                                        @Nullable HydraulicConnectionHeadBlockEntity blockEntity,
+                                        boolean rodSettingsMode) {
         super(ModMenuTypes.HYDRAULIC_CONNECTION_HEAD.get(), containerId);
         this.blockPos = blockPos.immutable();
         this.blockEntity = blockEntity;
+        this.rodSettingsMode = rodSettingsMode;
         this.access = ContainerLevelAccess.create(inventory.player.level(), this.blockPos);
         this.addDataSlots(this);
     }
@@ -50,12 +60,7 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
 
     @Override
     public boolean stillValid(Player player) {
-        return this.blockEntity != null && this.blockEntity.getLevel() == player.level()
-                && !this.blockEntity.isRemoved()
-                && player.distanceToSqr(
-                        this.blockEntity.getBlockPos().getX() + 0.5D,
-                        this.blockEntity.getBlockPos().getY() + 0.5D,
-                        this.blockEntity.getBlockPos().getZ() + 0.5D) <= 64.0D;
+        return this.blockEntity != null && this.blockEntity.isSettingsInteractionValid(player);
     }
 
     @Override
@@ -64,14 +69,16 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
             return 0;
         }
         return switch (index) {
-            case 0 -> this.blockEntity.getStretchResistance();
+            case 0 -> this.isHingeLimitMode() ? this.blockEntity.getHingeMinAngle() : this.blockEntity.getStretchResistance();
             case 1 -> this.blockEntity.isFreeMode() ? 1 : 0;
             case 2 -> this.blockEntity.getExpectedLengthTenths();
-            case 3 -> this.blockEntity.getReturnForce();
+            case 3 -> this.isHingeLimitMode() ? this.blockEntity.getHingeMaxAngle() : this.blockEntity.getReturnForce();
             case 4 -> this.blockEntity.isExpectedLengthControlledByRegulator() ? 1 : 0;
             case 5 -> this.blockEntity.isCreativeLink() ? 1 : 0;
             case 6 -> this.blockEntity.getRedstoneMinLengthTenths();
             case 7 -> this.blockEntity.getRedstoneMaxLengthTenths();
+            case 8 -> this.blockEntity.isGiantHydraulicLink() ? 1 : 0;
+            case 9 -> this.isHingeLimitMode() ? 1 : 0;
             default -> 0;
         };
     }
@@ -89,12 +96,20 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
         boolean creativeLink = this.get(5) != 0;
         int redstoneMinLengthTenths = this.get(6);
         int redstoneMaxLengthTenths = this.get(7);
+        boolean giantHydraulicLink = this.get(8) != 0;
+        if (this.isBrassHingeHead()) {
+            if (index == 0 || index == 3) {
+                this.blockEntity.setHingeAngleLimits(index == 0 ? value : this.get(0),
+                        index == 3 ? value : this.get(3));
+            }
+            return;
+        }
         switch (index) {
             case 0 -> {
                 if (creativeLink) {
                     return;
                 }
-                stretchResistance = HydraulicConnectionHeadBlockEntity.clampStretchResistance(value);
+                stretchResistance = giantHydraulicLink ? value : HydraulicConnectionHeadBlockEntity.clampStretchResistance(value);
             }
             case 1 -> {
                 if (creativeLink) {
@@ -107,7 +122,7 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
                 if (creativeLink) {
                     return;
                 }
-                returnForce = HydraulicConnectionHeadBlockEntity.clampReturnForce(value);
+                returnForce = giantHydraulicLink ? value : HydraulicConnectionHeadBlockEntity.clampReturnForce(value);
             }
             case 4, 5 -> {
                 return;
@@ -118,17 +133,27 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
                 return;
             }
         }
-        this.blockEntity.applySyncedSettings(stretchResistance, freeMode, expectedLengthTenths, returnForce,
-                redstoneMinLengthTenths, redstoneMaxLengthTenths);
+        if (giantHydraulicLink) {
+            this.blockEntity.setGiantHydraulicSettingsAndMirror(stretchResistance, freeMode, expectedLengthTenths,
+                    returnForce, redstoneMinLengthTenths, redstoneMaxLengthTenths);
+        } else {
+            this.blockEntity.applySyncedSettings(stretchResistance, freeMode, expectedLengthTenths, returnForce,
+                    redstoneMinLengthTenths, redstoneMaxLengthTenths);
+        }
     }
 
     @Override
     public int getCount() {
-        return 8;
+        return 10;
     }
 
     public BlockPos getBlockPos() {
         return this.blockPos;
+    }
+
+    @Nullable
+    public HydraulicConnectionHeadBlockEntity getBlockEntity() {
+        return this.blockEntity;
     }
 
     public int getStretchResistance() {
@@ -161,6 +186,32 @@ public class HydraulicConnectionHeadMenu extends AbstractContainerMenu implement
 
     public int getRedstoneMaxLengthTenths() {
         return this.get(7);
+    }
+
+    public boolean isGiantHydraulicLink() {
+        return this.get(8) != 0;
+    }
+
+    public boolean isBrassHingeHead() {
+        return this.get(9) != 0;
+    }
+
+    public boolean isRodSettingsMode() {
+        return this.rodSettingsMode;
+    }
+
+    public static void open(Player player, HydraulicConnectionHeadBlockEntity head, boolean rodSettingsMode) {
+        player.openMenu(new SimpleMenuProvider(
+                (containerId, inventory, ignored) -> new HydraulicConnectionHeadMenu(
+                        containerId, inventory, head, rodSettingsMode),
+                head.getDisplayName()), buffer -> {
+            buffer.writeBlockPos(head.getBlockPos());
+            buffer.writeBoolean(rodSettingsMode);
+        });
+    }
+
+    private boolean isHingeLimitMode() {
+        return this.blockEntity != null && this.blockEntity.isBrassHingeHead() && !this.rodSettingsMode;
     }
 
 }

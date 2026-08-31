@@ -106,7 +106,7 @@ public class UniversalJointScreen extends AbstractContainerScreen<UniversalJoint
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (this.isHoveringSlider(mouseX, mouseY)) {
-            float step = 1.0F; // 只能滑到整数倍
+            float step = 1.0F;
             float direction = scrollY > 0 ? 1 : -1;
             this.applySliderValue(this.sliderValue + direction * step);
             return true;
@@ -136,13 +136,11 @@ public class UniversalJointScreen extends AbstractContainerScreen<UniversalJoint
                     AllGuiTextures.VALUE_SETTINGS_BAR);
         }
 
-        // 绘制刻度标记：-4x, -3x, -2x, -1x, 0x, 1x, 2x, 3x, 4x (9个刻度)
         for (int i = 0; i <= 8; i++) {
             int markerX = x + BAR_X + Math.round((BAR_WIDTH - 1) * (i / 8.0F));
             AllGuiTextures.VALUE_SETTINGS_MILESTONE.render(guiGraphics, markerX, barY + 1);
         }
 
-        // 计算游标位置（-4.0 到 4.0 映射到 0.0 到 1.0）
         float normalizedValue = (this.sliderValue + 4.0F) / 8.0F;
         int centerX = x + BAR_X + Math.round((BAR_WIDTH - 1) * normalizedValue);
         int cursorLeft = Mth.clamp(centerX - CURSOR_WIDTH / 2, x + BAR_X, x + BAR_X + BAR_WIDTH - CURSOR_WIDTH);
@@ -154,14 +152,12 @@ public class UniversalJointScreen extends AbstractContainerScreen<UniversalJoint
 
     private void updateSliderFromMouse(double mouseX) {
         float progress = (float) ((mouseX - (this.leftPos + BAR_X)) / (BAR_WIDTH - 1.0D));
-        // 将0.0-1.0映射到-4.0到4.0
         float value = Mth.clamp(progress, 0.0F, 1.0F) * 8.0F - 4.0F;
         this.applySliderValue(value);
     }
 
     private void applySliderValue(float value) {
         float clamped = Mth.clamp(value, UniversalJointBlockEntity.getMinSpeedRatio(), UniversalJointBlockEntity.getMaxSpeedRatio());
-        // 四舍五入到整数
         clamped = Math.round(clamped);
         
         if (Math.abs(clamped - this.sliderValue) < 0.001F) {

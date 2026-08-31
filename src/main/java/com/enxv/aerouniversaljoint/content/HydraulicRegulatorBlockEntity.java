@@ -1,5 +1,6 @@
 package com.enxv.aerouniversaljoint.content;
 
+import com.enxv.aerouniversaljoint.AeroUniversalJointConfig;
 import com.enxv.aerouniversaljoint.ModBlockEntities;
 import com.enxv.aerouniversaljoint.util.SubLevelReferenceHelper;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
@@ -9,6 +10,7 @@ import java.util.Objects;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -16,11 +18,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 public class HydraulicRegulatorBlockEntity extends KineticBlockEntity {
-    private static final float STRESS_IMPACT = 8.0F;
-    private static final double MIN_TRANSITION_SPEED = 16.0D;
-    private static final double MAX_TRANSITION_SPEED = 256.0D;
-    private static final double MIN_TRANSITION_MULTIPLIER = 0.5D;
-    private static final double MAX_TRANSITION_MULTIPLIER = 4.0D;
     private int lastAppliedSignal = -1;
     @Nullable
     private HydraulicConnectionHeadBlockEntity cachedControlledHead;
@@ -72,6 +69,12 @@ public class HydraulicRegulatorBlockEntity extends KineticBlockEntity {
             return;
         }
 
+        if (target.isGiantHydraulicLink()) {
+            target.setGiantHydraulicTargetAndMirror(expectedLengthTenths, command.transitionMultiplier());
+            this.lastAppliedSignal = command.signal();
+            return;
+        }
+
         target.setSettingsAndMirror(target.getStretchResistance(), false, expectedLengthTenths, target.getReturnForce(),
                 command.transitionMultiplier());
         this.lastAppliedSignal = command.signal();
@@ -79,8 +82,8 @@ public class HydraulicRegulatorBlockEntity extends KineticBlockEntity {
 
     @Override
     public float calculateStressApplied() {
-        this.lastStressApplied = STRESS_IMPACT;
-        return STRESS_IMPACT;
+        this.lastStressApplied = AeroUniversalJointConfig.regulatorStressImpact();
+        return this.lastStressApplied;
     }
 
     private HydraulicConnectionHeadBlockEntity getControlledHead() {
@@ -202,16 +205,24 @@ public class HydraulicRegulatorBlockEntity extends KineticBlockEntity {
         if (!Double.isFinite(speed) || speed <= 0.0D) {
             return 1.0D;
         }
-        if (speed <= MIN_TRANSITION_SPEED) {
-            return MIN_TRANSITION_MULTIPLIER;
+        double minSpeed = AeroUniversalJointConfig.regulatorMinTransitionSpeed();
+        double maxSpeed = Math.max(minSpeed, AeroUniversalJointConfig.regulatorMaxTransitionSpeed());
+        double minMultiplier = AeroUniversalJointConfig.regulatorMinTransitionMultiplier();
+        double maxMultiplier = Math.max(minMultiplier, AeroUniversalJointConfig.regulatorMaxTransitionMultiplier());
+        if (speed <= minSpeed) {
+            return HydraulicConnectionHeadBlockEntity.clampExpectedLengthApproachMultiplier(minMultiplier);
         }
-        if (speed >= MAX_TRANSITION_SPEED) {
-            return MAX_TRANSITION_MULTIPLIER;
+        if (speed >= maxSpeed) {
+            return HydraulicConnectionHeadBlockEntity.clampExpectedLengthApproachMultiplier(maxMultiplier);
+        }
+        if (maxSpeed <= minSpeed) {
+            return HydraulicConnectionHeadBlockEntity.clampExpectedLengthApproachMultiplier(maxMultiplier);
         }
 
-        double normalized = Math.log(speed / MIN_TRANSITION_SPEED) / Math.log(MAX_TRANSITION_SPEED / MIN_TRANSITION_SPEED);
-        double multiplier = MIN_TRANSITION_MULTIPLIER
-                * Math.pow(MAX_TRANSITION_MULTIPLIER / MIN_TRANSITION_MULTIPLIER, normalized);
+        double normalized = minSpeed > 0.0D
+                ? Math.log(speed / minSpeed) / Math.log(maxSpeed / minSpeed)
+                : speed / maxSpeed;
+        double multiplier = minMultiplier * Math.pow(maxMultiplier / minMultiplier, normalized);
         return HydraulicConnectionHeadBlockEntity.clampExpectedLengthApproachMultiplier(multiplier);
     }
 

@@ -1,6 +1,7 @@
 package com.enxv.aerouniversaljoint.content;
 
 import com.enxv.aerouniversaljoint.client.AeroUniversalJointPartials;
+import com.enxv.aerouniversaljoint.client.HydraulicRodTargeting;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.simibubi.create.foundation.blockEntity.renderer.SmartBlockEntityRenderer;
@@ -9,6 +10,7 @@ import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
+import dev.engine_room.flywheel.lib.model.baked.PartialModel;
 import net.createmod.catnip.render.CachedBuffers;
 import net.createmod.catnip.render.SuperByteBuffer;
 import net.createmod.catnip.theme.Color;
@@ -22,6 +24,7 @@ import net.minecraft.world.phys.Vec3;
 import net.createmod.catnip.math.AngleHelper;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import org.jetbrains.annotations.Nullable;
 
 public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<HydraulicConnectionHeadBlockEntity> {
     private static final double MIN_LINK_LENGTH = 1.0E-3D;
@@ -29,6 +32,9 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
     private static final float CORE_MODEL_LENGTH = 24.0F / PIXELS_PER_BLOCK;
     private static final float ROD_SCALE = 0.85F;
     private static final float ROD_OFFSET = 0.125F;
+    private static final float GIANT_FIXED_OWNER_OFFSET = 23.0F / PIXELS_PER_BLOCK;
+    private static final float GIANT_ROD_OWNER_OFFSET = 24.0F / PIXELS_PER_BLOCK;
+    private static final float GIANT_MODEL_Y_SHIFT = 8.0F / PIXELS_PER_BLOCK;
     private static final float MIN_ROLL_REFERENCE_LENGTH_SQUARED = 1.0E-6F;
     private static final Vector3f MODEL_AXIS = new Vector3f(0.0F, 1.0F, 0.0F);
     private static final Vector3f MODEL_ROLL_REFERENCE = new Vector3f(1.0F, 0.0F, 0.0F);
@@ -56,6 +62,12 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
     public static void renderPreview(HydraulicConnectionHeadBlockEntity be, Vec3 start, Vec3 end,
                                      PoseStack ms, VertexConsumer buffer, int light, Color color, float partialTicks,
                                      boolean creative) {
+        renderPreview(be, start, end, ms, buffer, light, color, partialTicks, creative, false);
+    }
+
+    public static void renderPreview(HydraulicConnectionHeadBlockEntity be, Vec3 start, Vec3 end,
+                                     PoseStack ms, VertexConsumer buffer, int light, Color color, float partialTicks,
+                                     boolean creative, boolean giant) {
         Vec3 connection = end.subtract(start);
         double distance = connection.length();
         Vec3 direction = distance < MIN_LINK_LENGTH
@@ -63,6 +75,13 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
                 : connection.scale(1.0D / distance);
         Vector3f renderDirection = direction.toVector3f();
         Vector3f reverseRenderDirection = new Vector3f(renderDirection).mul(-1.0F);
+
+        if (giant) {
+            renderPreviewSleeve(be, ms, buffer, light, start, renderDirection, color);
+            renderPreviewSleeve(be, ms, buffer, light, end, reverseRenderDirection, color);
+            renderGiantVisual(be, ms, buffer, light, start, end, distance, color, null);
+            return;
+        }
 
         renderPreviewSleeve(be, ms, buffer, light, start, renderDirection, color);
         renderPreviewSleeve(be, ms, buffer, light, end, reverseRenderDirection, color);
@@ -93,6 +112,11 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
         Vec3 end = toRenderSpace(be, otherCenter, partialTicks);
         Vec3 connection = end.subtract(start);
         double distance = connection.length();
+        Direction ownFacing = be.getBlockState().getValue(HydraulicConnectionHeadBlock.FACING);
+        Vec3 outlineRollReference = normalToWorld(be,
+                modelRollReference(ownFacing, MODEL_ROLL_REFERENCE), partialTicks);
+        HydraulicRodTargeting.register(be, ownCenter, otherCenter, outlineRollReference,
+                be.isGiantHydraulicLink() ? 0.72D : 0.28D);
 
         Vec3 direction = distance < MIN_LINK_LENGTH
                 ? getStableFallbackDirection(be, other, partialTicks)
@@ -104,6 +128,12 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
 
         VertexConsumer cutoutBuffer = buffer.getBuffer(RenderType.cutoutMipped());
         Color effectColor = LinkVisualEffects.effectColor(be.getLinkStrainEffect());
+        if (be.isGiantHydraulicLink()) {
+            renderSleeve(be, ms, cutoutBuffer, light, start, renderDirection, startRollReference, effectColor);
+            renderSleeve(be, ms, cutoutBuffer, light, end, reverseRenderDirection, endRollReference, effectColor);
+            renderGiantVisual(be, ms, cutoutBuffer, light, start, end, distance, effectColor, startRollReference);
+            return;
+        }
         renderSleeve(be, ms, cutoutBuffer, light, start, renderDirection, startRollReference, effectColor);
         renderSleeve(be, ms, cutoutBuffer, light, end, reverseRenderDirection, endRollReference, effectColor);
         renderRod(be, ms, cutoutBuffer, light, start.add(direction.scale(ROD_OFFSET)), renderDirection, startRollReference, effectColor);
@@ -143,6 +173,54 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
                 .rotateTo(MODEL_AXIS, direction)
                 .scaleY(scale)
                 .color(effectColor)
+                .light(light)
+                .renderInto(ms, buffer);
+    }
+
+    private static void renderGiantVisual(HydraulicConnectionHeadBlockEntity be, PoseStack ms,
+                                          VertexConsumer buffer, int light, Vec3 owner, Vec3 remote,
+                                          double distance, Color color, @Nullable RollReference rollReference) {
+        Vec3 connection = remote.subtract(owner);
+        double safeDistance = connection.length();
+        Vec3 direction = safeDistance < MIN_LINK_LENGTH
+                ? worldFacingVector(be, 0.0F)
+                : connection.scale(1.0D / safeDistance);
+        Vector3f axis = direction.toVector3f();
+        float roll = rollReference == null ? 0.0F : rollCorrection(axis, rollReference);
+        GiantHydraulicRodVisualState visual = GiantHydraulicRodVisualState.fromDistance(distance);
+
+        renderGiantPart(AeroUniversalJointPartials.GIANT_HYDRAULIC_ROD_FIXED, be, ms, buffer, light,
+                owner.add(direction.scale(GIANT_FIXED_OWNER_OFFSET - GIANT_MODEL_Y_SHIFT)), axis, roll, 1.0F, color);
+        renderGiantRod(AeroUniversalJointPartials.GIANT_HYDRAULIC_ROD_THICK, visual.thickOffset(), visual,
+                be, ms, buffer, light, owner, direction, axis, roll, color);
+        renderGiantRod(AeroUniversalJointPartials.GIANT_HYDRAULIC_ROD_MEDIUM, visual.mediumOffset(), visual,
+                be, ms, buffer, light, owner, direction, axis, roll, color);
+        renderGiantRod(AeroUniversalJointPartials.GIANT_HYDRAULIC_ROD_THIN, visual.thinOffset(), visual,
+                be, ms, buffer, light, owner, direction, axis, roll, color);
+    }
+
+    private static void renderGiantRod(PartialModel partial, double offset, GiantHydraulicRodVisualState visual,
+                                       HydraulicConnectionHeadBlockEntity be, PoseStack ms, VertexConsumer buffer,
+                                       int light, Vec3 owner, Vec3 direction, Vector3f axis, float roll,
+                                       Color color) {
+        float scale = (float) visual.continuousScale();
+        Vec3 origin = owner.add(direction.scale(offset + (GIANT_ROD_OWNER_OFFSET - GIANT_MODEL_Y_SHIFT) * scale));
+        renderGiantPart(partial, be, ms, buffer, light, origin, axis, roll, scale, color);
+    }
+
+    private static void renderGiantPart(PartialModel partial, HydraulicConnectionHeadBlockEntity be,
+                                        PoseStack ms, VertexConsumer buffer, int light, Vec3 origin,
+                                        Vector3f axis, float roll, float scale, Color color) {
+        SuperByteBuffer model = CachedBuffers.partial(partial, be.getBlockState());
+        if (model.isEmpty()) {
+            return;
+        }
+
+        model.translate(origin)
+                .rotateTo(MODEL_AXIS, axis)
+                .rotateY(roll)
+                .scaleY(scale)
+                .color(color)
                 .light(light)
                 .renderInto(ms, buffer);
     }
@@ -287,7 +365,7 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
         return reference;
     }
 
-    private float rollCorrection(Vector3f direction, RollReference reference) {
+    private static float rollCorrection(Vector3f direction, RollReference reference) {
         Vector3f axis = new Vector3f(direction);
         if (!normalizeIfUsable(axis)) {
             return 0.0F;
@@ -303,7 +381,7 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
         return secondaryCorrection != null ? secondaryCorrection : 0.0F;
     }
 
-    private Float rollCorrection(Vector3f axis, Quaternionf alignment, Vector3f modelReference, Vector3f targetReference) {
+    private static Float rollCorrection(Vector3f axis, Quaternionf alignment, Vector3f modelReference, Vector3f targetReference) {
         Vector3f target = projectOntoPlane(targetReference, axis);
         if (!normalizeIfUsable(target)) {
             return null;
@@ -319,11 +397,11 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
         return (float) Math.atan2(cross.dot(axis), current.dot(target));
     }
 
-    private Vector3f projectOntoPlane(Vector3f vector, Vector3f normal) {
+    private static Vector3f projectOntoPlane(Vector3f vector, Vector3f normal) {
         return new Vector3f(vector).sub(new Vector3f(normal).mul(vector.dot(normal)));
     }
 
-    private boolean normalizeIfUsable(Vector3f vector) {
+    private static boolean normalizeIfUsable(Vector3f vector) {
         if (vector.lengthSquared() < MIN_ROLL_REFERENCE_LENGTH_SQUARED) {
             return false;
         }
@@ -353,4 +431,5 @@ public class HydraulicConnectionHeadRenderer extends SmartBlockEntityRenderer<Hy
 
     private record RollReference(Vector3f primary, Vector3f secondary) {
     }
+
 }

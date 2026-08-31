@@ -36,6 +36,7 @@ public record SyncHydraulicSelectionPayload(@Nullable JointBindingData.Selection
             buffer.writeUUID(selection.subLevelId());
         }
         buffer.writeBoolean(selection.creativeHydraulic());
+        buffer.writeBoolean(selection.giantHydraulic());
     }
 
     private static SyncHydraulicSelectionPayload decode(RegistryFriendlyByteBuf buffer) {
@@ -47,8 +48,9 @@ public record SyncHydraulicSelectionPayload(@Nullable JointBindingData.Selection
         BlockPos pos = buffer.readBlockPos();
         UUID subLevelId = buffer.readBoolean() ? buffer.readUUID() : null;
         boolean creativeHydraulic = buffer.readBoolean();
+        boolean giantHydraulic = buffer.readBoolean();
         return new SyncHydraulicSelectionPayload(
-                new JointBindingData.Selection(dimensionId, pos, subLevelId, creativeHydraulic));
+                new JointBindingData.Selection(dimensionId, pos, subLevelId, creativeHydraulic, giantHydraulic));
     }
 
     @Override

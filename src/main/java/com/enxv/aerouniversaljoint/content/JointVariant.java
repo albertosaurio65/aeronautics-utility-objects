@@ -1,5 +1,6 @@
 package com.enxv.aerouniversaljoint.content;
 
+import com.enxv.aerouniversaljoint.AeroUniversalJointConfig;
 import com.enxv.aerouniversaljoint.ModBlocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -20,19 +21,25 @@ public enum JointVariant {
     }
 
     public double getLinkRange() {
-        return linkRange;
+        return this == ANDESITE
+                ? AeroUniversalJointConfig.andesiteJointLinkRange()
+                : AeroUniversalJointConfig.brassJointLinkRange();
     }
 
     public double getSoftRange() {
-        return stretchSoftRange;
+        return this == ANDESITE
+                ? AeroUniversalJointConfig.andesiteJointSoftRange()
+                : AeroUniversalJointConfig.brassJointSoftRange();
     }
 
     public double getDisconnectRange() {
-        return stretchDisconnectRange;
+        return this == ANDESITE
+                ? AeroUniversalJointConfig.andesiteJointDisconnectRange()
+                : AeroUniversalJointConfig.brassJointDisconnectRange();
     }
 
     public double getMaxForceRange() {
-        return this == ANDESITE ? 2.0D : stretchDisconnectRange;
+        return this == ANDESITE ? 2.0D : this.getDisconnectRange();
     }
 
     public boolean isElastic() {
@@ -40,11 +47,13 @@ public enum JointVariant {
     }
 
     public boolean isWithinLinkRange(double distanceSquared) {
-        return distanceSquared <= this.linkRange * this.linkRange;
+        double configuredLinkRange = this.getLinkRange();
+        return distanceSquared <= configuredLinkRange * configuredLinkRange;
     }
 
     public boolean isBeyondDisconnectRange(double distanceSquared) {
-        return distanceSquared > this.stretchDisconnectRange * this.stretchDisconnectRange;
+        double configuredDisconnectRange = this.getDisconnectRange();
+        return distanceSquared > configuredDisconnectRange * configuredDisconnectRange;
     }
 
     public String getSerializedName() {

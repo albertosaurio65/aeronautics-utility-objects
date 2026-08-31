@@ -13,10 +13,18 @@ public final class AeroUniversalJointNetwork {
     }
 
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        PayloadRegistrar registrar = event.registrar("2");
         registrar.playToClient(SyncHydraulicSelectionPayload.TYPE, SyncHydraulicSelectionPayload.STREAM_CODEC, SyncHydraulicSelectionPayload::handleClient);
         registrar.playToServer(SetDampingResistancePayload.TYPE, SetDampingResistancePayload.STREAM_CODEC, SetDampingResistancePayload::handleServer);
         registrar.playToServer(SetHydraulicSettingsPayload.TYPE, SetHydraulicSettingsPayload.STREAM_CODEC, SetHydraulicSettingsPayload::handleServer);
+        registrar.playToServer(SetGiantHydraulicSettingsPayload.TYPE, SetGiantHydraulicSettingsPayload.STREAM_CODEC,
+                SetGiantHydraulicSettingsPayload::handleServer);
+        registrar.playToServer(SetHydraulicHingeLimitsPayload.TYPE, SetHydraulicHingeLimitsPayload.STREAM_CODEC,
+                SetHydraulicHingeLimitsPayload::handleServer);
+        registrar.playToServer(OpenHydraulicRodSettingsPayload.TYPE, OpenHydraulicRodSettingsPayload.STREAM_CODEC,
+                OpenHydraulicRodSettingsPayload::handleServer);
+        registrar.playToServer(BreakHydraulicRodPayload.TYPE, BreakHydraulicRodPayload.STREAM_CODEC,
+                BreakHydraulicRodPayload::handleServer);
         registrar.playToServer(SetJointSpeedRatioPayload.TYPE, SetJointSpeedRatioPayload.STREAM_CODEC, SetJointSpeedRatioPayload::handleServer);
     }
 }

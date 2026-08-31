@@ -29,11 +29,10 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
 
 public class UniversalJointBlock extends DirectionalKineticBlock implements IBE<UniversalJointBlockEntity>, BlockSubLevelAssemblyListener, IWrenchable {
-    private static final VoxelShape[] ANDESITE_SHAPES = makeShapes(0.0D, 10.0D, 0.0D, 6.25D, 0.25D, 1.25D);
-    private static final VoxelShape[] BRASS_SHAPES = makeShapes(0.0D, 10.75D, 0.5D, 5.75D, 0.0D, 2.25D);
+    private static final VoxelShape[] ANDESITE_SHAPES = DirectionalConnectionShapes.makeShapes(0.0D, 10.0D, 0.0D, 6.25D, 0.25D, 1.25D);
+    private static final VoxelShape[] BRASS_SHAPES = DirectionalConnectionShapes.makeShapes(0.0D, 10.75D, 0.5D, 5.75D, 0.0D, 2.25D);
 
     private final JointVariant variant;
 
@@ -111,7 +110,6 @@ public class UniversalJointBlock extends DirectionalKineticBlock implements IBE<
             return InteractionResult.SUCCESS;
         }
 
-        // Shift + 右键 = 拆解连接
         if (player.isShiftKeyDown()) {
             blockEntity.detachLink();
             player.displayClientMessage(Component.translatable("message.aeronautics_utility_objects.unlinked"), true);
@@ -122,7 +120,6 @@ public class UniversalJointBlock extends DirectionalKineticBlock implements IBE<
             return InteractionResult.SUCCESS;
         }
 
-        // 普通右键 = 打开GUI
         player.openMenu(blockEntity, pos);
         return InteractionResult.SUCCESS;
     }
@@ -141,32 +138,14 @@ public class UniversalJointBlock extends DirectionalKineticBlock implements IBE<
     public void beforeMove(net.minecraft.server.level.ServerLevel oldLevel, net.minecraft.server.level.ServerLevel newLevel,
                            BlockState state, BlockPos oldPos, BlockPos newPos) {
         UniversalJointBlockEntity moving = getBlockEntity(oldLevel, oldPos);
-        RecentMoveRemapper.prepare(oldLevel, oldPos, moving != null ? moving.getContainingSubLevelId() : findSubLevelId(oldLevel, oldPos));
-        if (moving != null) {
-            moving.preserveLinkForSubLevelMove();
-        }
+        SubLevelMoveHandler.beforeMove(oldLevel, oldPos, moving);
     }
 
     @Override
     public void afterMove(net.minecraft.server.level.ServerLevel oldLevel, net.minecraft.server.level.ServerLevel newLevel,
                           BlockState state, BlockPos oldPos, BlockPos newPos) {
-        RecentMoveRemapper.record(newLevel, oldPos, newPos, findSubLevelId(newLevel, newPos));
-
         UniversalJointBlockEntity moved = getBlockEntity(newLevel, newPos);
-        if (moved == null) {
-            return;
-        }
-        moved.remapLinkedReferenceAfterSubLevelMove();
-
-        UniversalJointBlockEntity linked = moved.getLoadedLinkedJoint();
-        if (linked != null) {
-            linked.updateReferenceTo(newPos, findSubLevelId(newLevel, newPos));
-        }
-    }
-
-    @Nullable
-    private UUID findSubLevelId(Level level, BlockPos pos) {
-        return SubLevelReferenceHelper.findContainingSubLevelId(level, pos);
+        SubLevelMoveHandler.afterMove(newLevel, oldPos, newPos, moved);
     }
 
     @Override
@@ -194,88 +173,4 @@ public class UniversalJointBlock extends DirectionalKineticBlock implements IBE<
         return shapes[state.getValue(FACING).ordinal()];
     }
 
-    private static VoxelShape[] makeShapes(double shaftMinY, double shaftMaxY, double bodyMinY, double bodyMaxY,
-                                           double flangeMinY, double flangeMaxY) {
-        VoxelShape[] shapes = new VoxelShape[Direction.values().length];
-        for (Direction facing : Direction.values()) {
-            shapes[facing.ordinal()] = Shapes.or(
-                    rotateBox(facing, 5.5D, shaftMinY, 5.5D, 10.5D, shaftMaxY, 10.5D),
-                    rotateBox(facing, 4.25D, bodyMinY, 4.25D, 11.75D, bodyMaxY, 11.75D),
-                    rotateBox(facing, 4.0D, flangeMinY, 4.0D, 12.0D, flangeMaxY, 12.0D)
-            );
-        }
-        return shapes;
-    }
-
-    private static VoxelShape rotateBox(Direction facing, double minX, double minY, double minZ,
-                                        double maxX, double maxY, double maxZ) {
-        double[][] corners = {
-                {minX, minY, minZ},
-                {minX, minY, maxZ},
-                {minX, maxY, minZ},
-                {minX, maxY, maxZ},
-                {maxX, minY, minZ},
-                {maxX, minY, maxZ},
-                {maxX, maxY, minZ},
-                {maxX, maxY, maxZ}
-        };
-
-        double rotatedMinX = 16.0D;
-        double rotatedMinY = 16.0D;
-        double rotatedMinZ = 16.0D;
-        double rotatedMaxX = 0.0D;
-        double rotatedMaxY = 0.0D;
-        double rotatedMaxZ = 0.0D;
-
-        for (double[] corner : corners) {
-            double[] rotated = rotatePoint(facing, corner[0], corner[1], corner[2]);
-            rotatedMinX = Math.min(rotatedMinX, rotated[0]);
-            rotatedMinY = Math.min(rotatedMinY, rotated[1]);
-            rotatedMinZ = Math.min(rotatedMinZ, rotated[2]);
-            rotatedMaxX = Math.max(rotatedMaxX, rotated[0]);
-            rotatedMaxY = Math.max(rotatedMaxY, rotated[1]);
-            rotatedMaxZ = Math.max(rotatedMaxZ, rotated[2]);
-        }
-
-        return Block.box(rotatedMinX, rotatedMinY, rotatedMinZ, rotatedMaxX, rotatedMaxY, rotatedMaxZ);
-    }
-
-    private static double[] rotatePoint(Direction facing, double x, double y, double z) {
-        double centeredX = x - 8.0D;
-        double centeredY = y - 8.0D;
-        double centeredZ = z - 8.0D;
-
-        double rotatedX = centeredX;
-        double rotatedY = centeredY;
-        double rotatedZ = centeredZ;
-
-        switch (facing) {
-            case DOWN -> {
-                rotatedY = -centeredY;
-                rotatedZ = -centeredZ;
-            }
-            case NORTH -> {
-                rotatedY = centeredZ;
-                rotatedZ = -centeredY;
-            }
-            case SOUTH -> {
-                rotatedY = -centeredZ;
-                rotatedZ = centeredY;
-            }
-            case EAST -> {
-                rotatedX = centeredY;
-                rotatedY = -centeredX;
-                rotatedZ = centeredZ;
-            }
-            case WEST -> {
-                rotatedX = -centeredY;
-                rotatedY = centeredX;
-                rotatedZ = centeredZ;
-            }
-            case UP -> {
-            }
-        }
-
-        return new double[] {rotatedX + 8.0D, rotatedY + 8.0D, rotatedZ + 8.0D};
-    }
 }

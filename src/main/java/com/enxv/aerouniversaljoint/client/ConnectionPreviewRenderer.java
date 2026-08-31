@@ -68,7 +68,8 @@ public final class ConnectionPreviewRenderer {
         if (held.getItem() instanceof HydraulicRodItem rodItem) {
             PendingHydraulicSelections.readClient(player).ifPresent(selection ->
                     renderHydraulicPreview(level, event, selection, hit,
-                            rodItem.isCreative() || selection.creativeHydraulic(), partialTicks));
+                            rodItem.isCreative() || selection.creativeHydraulic(),
+                            rodItem.isGiant() || selection.giantHydraulic(), partialTicks));
         }
     }
 
@@ -108,7 +109,7 @@ public final class ConnectionPreviewRenderer {
     }
 
     private static void renderHydraulicPreview(Level level, RenderLevelStageEvent event, JointBindingData.Selection selection,
-                                               BlockHitResult hit, boolean creative, float partialTicks) {
+                                               BlockHitResult hit, boolean creative, boolean giant, float partialTicks) {
         BlockEntity startBlockEntity = resolve(level, selection);
         if (!(startBlockEntity instanceof HydraulicConnectionHeadBlockEntity start)
                 || !level.dimension().location().equals(selection.dimensionId())) {
@@ -139,7 +140,7 @@ public final class ConnectionPreviewRenderer {
         renderInWorld(event, startAnchor, endAnchor, buffer ->
                 HydraulicConnectionHeadRenderer.renderPreview(start, startAnchor, endAnchor,
                         event.getPoseStack(), buffer, LightTexture.FULL_BRIGHT,
-                        color, partialTicks, creative));
+                        color, partialTicks, creative, giant));
     }
 
     private static void renderInWorld(RenderLevelStageEvent event, Vec3 start, Vec3 end, Renderer renderer) {

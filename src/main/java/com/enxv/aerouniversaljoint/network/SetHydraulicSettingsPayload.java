@@ -50,11 +50,13 @@ public record SetHydraulicSettingsPayload(BlockPos pos, int stretchResistance, b
     public static void handleServer(SetHydraulicSettingsPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             Player player = context.player();
-            if (!(player.containerMenu instanceof HydraulicConnectionHeadMenu menu) || !menu.getBlockPos().equals(payload.pos())) {
+            if (!(player.containerMenu instanceof HydraulicConnectionHeadMenu menu)
+                    || !menu.isRodSettingsMode() || !menu.getBlockPos().equals(payload.pos())) {
                 return;
             }
 
-            if (player.level().getBlockEntity(payload.pos()) instanceof HydraulicConnectionHeadBlockEntity head) {
+            HydraulicConnectionHeadBlockEntity head = menu.getBlockEntity();
+            if (head != null) {
                 if (head.isCreativeLink()) {
                     head.setSettingsAndMirror(0, false, payload.expectedLengthTenths(), 0);
                     head.setRedstoneLengthRangeAndMirror(payload.redstoneMinLengthTenths(), payload.redstoneMaxLengthTenths());

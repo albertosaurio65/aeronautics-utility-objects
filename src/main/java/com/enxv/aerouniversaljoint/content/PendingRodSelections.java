@@ -1,14 +1,10 @@
 package com.enxv.aerouniversaljoint.content;
 
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.world.entity.player.Player;
 
 public final class PendingRodSelections {
-    private static final Map<UUID, PendingSelection> SELECTIONS = new ConcurrentHashMap<>();
-    private static final Map<UUID, PendingSelection> CLIENT_SELECTIONS = new ConcurrentHashMap<>();
+    private static final PlayerSelectionStore<PendingSelection> SELECTIONS = new PlayerSelectionStore<>();
 
     private PendingRodSelections() {
     }
@@ -18,10 +14,7 @@ public final class PendingRodSelections {
     }
 
     public static Optional<PendingSelection> readPending(Player player) {
-        if (player == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(SELECTIONS.get(player.getUUID()));
+        return SELECTIONS.read(player);
     }
 
     public static void write(Player player, JointBindingData.Selection selection) {
@@ -29,38 +22,23 @@ public final class PendingRodSelections {
     }
 
     public static void write(Player player, JointBindingData.Selection selection, boolean brassRod) {
-        if (player == null) {
-            return;
-        }
-        SELECTIONS.put(player.getUUID(), new PendingSelection(selection, brassRod));
+        SELECTIONS.write(player, new PendingSelection(selection, brassRod));
     }
 
     public static void clear(Player player) {
-        if (player == null) {
-            return;
-        }
-        SELECTIONS.remove(player.getUUID());
+        SELECTIONS.clear(player);
     }
 
     public static Optional<PendingSelection> readClientPending(Player player) {
-        if (player == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(CLIENT_SELECTIONS.get(player.getUUID()));
+        return SELECTIONS.readClient(player);
     }
 
     public static void writeClient(Player player, JointBindingData.Selection selection, boolean brassRod) {
-        if (player == null) {
-            return;
-        }
-        CLIENT_SELECTIONS.put(player.getUUID(), new PendingSelection(selection, brassRod));
+        SELECTIONS.writeClient(player, new PendingSelection(selection, brassRod));
     }
 
     public static void clearClient(Player player) {
-        if (player == null) {
-            return;
-        }
-        CLIENT_SELECTIONS.remove(player.getUUID());
+        SELECTIONS.clearClient(player);
     }
 
     public record PendingSelection(JointBindingData.Selection selection, boolean brassRod) {

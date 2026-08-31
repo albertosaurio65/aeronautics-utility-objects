@@ -1,5 +1,6 @@
 package com.enxv.aerouniversaljoint.content;
 
+import com.enxv.aerouniversaljoint.AeroUniversalJointConfig;
 import com.enxv.aerouniversaljoint.ModBlockEntities;
 import com.enxv.aerouniversaljoint.ModItems;
 import com.enxv.aerouniversaljoint.access.DetachedKineticSafetyGuard;
@@ -43,28 +44,19 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
-public class UniversalJointBlockEntity extends KineticBlockEntity implements BlockEntitySubLevelActor, DetachedKineticSafetyGuard, KineticVisualEffectAccess, MenuProvider {
+public class UniversalJointBlockEntity extends KineticBlockEntity implements BlockEntitySubLevelActor,
+        DetachedKineticSafetyGuard, KineticVisualEffectAccess, MenuProvider, SubLevelLinkedEndpoint {
     private static final String TAG_LINKED_POS = "LinkedPos";
     private static final String TAG_LINKED_SUB_LEVEL = "LinkedSubLevel";
-    private static final String TAG_SPEED_RATIO = "SpeedRatio";
     private static final String TAG_TRANSMISSION_AXIS_ALIGNED = "TransmissionAxisAligned";
     private static final String TAG_LINKED_REST_LENGTH = "LinkedRestLength";
     private static final String TAG_LINKED_VARIANT = "LinkedVariant";
     private static final String TAG_LINK_STRAIN_EFFECT = "LinkStrainEffect";
     private static final String TAG_LINK_STRAINED = "LinkStrained";
-    private static final boolean SPEED_RATIO_FEATURE_ENABLED = false;
 
-    private static final double BRASS_PULL_STIFFNESS = 12.0D;
-    private static final double BRASS_PULL_CURVE = 4.0D;
-    private static final double BRASS_PULL_DAMPING = 7.0D;
-    private static final double BRASS_PULL_DAMPING_GAIN = 3.0D;
-    private static final double BRASS_ENDPOINT_PULL_MULTIPLIER = 4.0D;
-    private static final double ANDESITE_PULL_STIFFNESS = 1320.0D;
-    private static final double ANDESITE_PULL_DAMPING = 18.0D;
     private static final double MIN_PHYSICS_DISTANCE = 1.0E-4D;
     private static final int SERVER_LINK_VALIDATION_INTERVAL = 10;
     private static final int LINK_STRAIN_RECOVERY_TICKS = 12;
-    private static final long SUB_LEVEL_MOVE_PRESERVE_WINDOW_MS = 5_000L;
 
     @Nullable
     private BlockPos linkedPos;
@@ -73,7 +65,6 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
     @Nullable
     private JointVariant linkedVariant;
     private double linkedRestLength = Double.NaN;
-    private float speedRatio = 1.0F;  // 默认1x速度，范围：-4.0 到 4.0
 
     private final ForceTotal elasticForceTotal = new ForceTotal();
     private final ForceTotal partnerElasticForceTotal = new ForceTotal();
@@ -85,7 +76,7 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
     @Nullable
     private Boolean transmissionAxisAligned;
     private boolean detachingForBlockRemoval;
-    private long preserveLinkForSubLevelMoveUntil;
+    private boolean preservingLinkForSubLevelMove;
     private int linkStrainEffectDelay;
     private float linkStrainEffect;
     private boolean linkWasStrained;
@@ -148,8 +139,8 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
 
     @Override
     public void remove() {
-        boolean preservingForSubLevelMove = this.isPreservingLinkForSubLevelMove();
-        this.preserveLinkForSubLevelMoveUntil = 0L;
+        boolean preservingForSubLevelMove = this.preservingLinkForSubLevelMove;
+        this.preservingLinkForSubLevelMove = false;
         if (this.level != null && !this.level.isClientSide && this.linkedPos != null) {
             if (preservingForSubLevelMove) {
                 this.clearLinkInternal(false);
@@ -176,7 +167,6 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         if (this.linkedVariant != null) {
             tag.putString(TAG_LINKED_VARIANT, this.linkedVariant.getSerializedName());
         }
-        tag.putFloat(TAG_SPEED_RATIO, this.speedRatio);
         if (this.transmissionAxisAligned != null) {
             tag.putBoolean(TAG_TRANSMISSION_AXIS_ALIGNED, this.transmissionAxisAligned);
         }
@@ -203,9 +193,6 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         this.linkedVariant = tag.contains(TAG_LINKED_VARIANT, Tag.TAG_STRING)
                 ? JointVariant.byName(tag.getString(TAG_LINKED_VARIANT))
                 : null;
-        if (tag.contains(TAG_SPEED_RATIO)) {
-            this.speedRatio = tag.getFloat(TAG_SPEED_RATIO);
-        }
         this.transmissionAxisAligned = tag.contains(TAG_TRANSMISSION_AXIS_ALIGNED)
                 ? tag.getBoolean(TAG_TRANSMISSION_AXIS_ALIGNED)
                 : null;
@@ -251,7 +238,7 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
                                      boolean connectedViaAxes, boolean connectedViaCogs) {
         if (target instanceof UniversalJointBlockEntity other && this.references(other) && other.references(this)) {
             if (this.isTransmissionSourceFor(other)) {
-                return this.getEffectiveSpeedRatio() * this.getRotationAxisAlignmentModifier(other);
+                return this.getRotationAxisAlignmentModifier(other);
             } else {
                 return 0.0f;
             }
@@ -321,9 +308,13 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         double endpointProgress = Math.min(1.0D, overshoot / Math.max(MIN_PHYSICS_DISTANCE,
                 variant.getDisconnectRange() - variant.getSoftRange()));
         double endpointMultiplier = 1.0D
-                + (BRASS_ENDPOINT_PULL_MULTIPLIER - 1.0D) * endpointProgress * endpointProgress;
-        double springMagnitude = BRASS_PULL_STIFFNESS * Math.expm1(overshoot * BRASS_PULL_CURVE) * endpointMultiplier;
-        double dampingMagnitude = separatingSpeed * (BRASS_PULL_DAMPING + overshoot * BRASS_PULL_DAMPING_GAIN);
+                + (AeroUniversalJointConfig.brassJointEndpointPullMultiplier() - 1.0D)
+                * endpointProgress * endpointProgress;
+        double springMagnitude = AeroUniversalJointConfig.brassJointPullStiffness()
+                * Math.expm1(overshoot * AeroUniversalJointConfig.brassJointPullCurve())
+                * endpointMultiplier;
+        double dampingMagnitude = separatingSpeed * (AeroUniversalJointConfig.brassJointPullDamping()
+                + overshoot * AeroUniversalJointConfig.brassJointPullDampingGain());
         double impulseMagnitude = (springMagnitude + dampingMagnitude) * timeStep;
         if (impulseMagnitude <= 0.0D) {
             return;
@@ -454,7 +445,7 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
     }
 
     public void preserveLinkForSubLevelMove() {
-        this.preserveLinkForSubLevelMoveUntil = System.currentTimeMillis() + SUB_LEVEL_MOVE_PRESERVE_WINDOW_MS;
+        this.preservingLinkForSubLevelMove = true;
     }
 
     public boolean hasLink() {
@@ -474,6 +465,11 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
     @Nullable
     public UniversalJointBlockEntity getLoadedLinkedJoint() {
         return this.resolveLinkedJoint();
+    }
+
+    @Override
+    public @Nullable SubLevelLinkedEndpoint getLoadedLinkedEndpoint() {
+        return this.getLoadedLinkedJoint();
     }
 
     public void updateReferenceTo(BlockPos newPos, @Nullable UUID newSubLevelId) {
@@ -674,18 +670,6 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         }
     }
 
-    private boolean isPreservingLinkForSubLevelMove() {
-        long preserveUntil = this.preserveLinkForSubLevelMoveUntil;
-        if (preserveUntil <= 0L) {
-            return false;
-        }
-        if (System.currentTimeMillis() <= preserveUntil) {
-            return true;
-        }
-        this.preserveLinkForSubLevelMoveUntil = 0L;
-        return false;
-    }
-
     private void refreshKinetics() {
         this.refreshKinetics(false);
     }
@@ -849,6 +833,15 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         other.lastObservedAxisAlignment = matchingAxis;
     }
 
+    private void refreshLinkedKinetics(UniversalJointBlockEntity other) {
+        UniversalJointBlockEntity source = this.isTransmissionSourceFor(other) ? this : other;
+        UniversalJointBlockEntity target = source == this ? other : this;
+
+        target.refreshKinetics();
+        source.refreshKinetics();
+        source.rememberTransmissionState(target, true);
+    }
+
     private void clearObservedTransmissionState() {
         this.lastTransmissionSource = null;
         this.lastObservedAxisAlignment = null;
@@ -878,14 +871,15 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
             return;
         }
 
-        double normalized = (magnitude - softRange) / (JointVariant.ANDESITE.getMaxForceRange() - softRange);
-        double force = ANDESITE_PULL_STIFFNESS * normalized * normalized;
+        double maxForceRange = Math.max(softRange + MIN_PHYSICS_DISTANCE, JointVariant.ANDESITE.getMaxForceRange());
+        double normalized = (magnitude - softRange) / (maxForceRange - softRange);
+        double force = AeroUniversalJointConfig.andesiteJointPullStiffness() * normalized * normalized;
         double signedForce = force * Math.signum(deviation);
 
         Vector3d ownVelocity = Sable.HELPER.getVelocity(this.level, ownLocal, new Vector3d());
         Vector3d otherVelocity = Sable.HELPER.getVelocity(this.level, otherLocal, new Vector3d());
         double relativeSpeed = otherVelocity.sub(ownVelocity, new Vector3d()).dot(direction);
-        double damping = ANDESITE_PULL_DAMPING * relativeSpeed;
+        double damping = AeroUniversalJointConfig.andesiteJointPullDamping() * relativeSpeed;
         double impulseMagnitude = (signedForce + damping) * timeStep;
         if (Math.abs(impulseMagnitude) <= 1.0E-8D) {
             return;
@@ -1041,7 +1035,6 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         return base.minmax(AABB.ofSize(Vec3.atCenterOf(this.linkedPos), 1.0D, 1.0D, 1.0D)).inflate(1.0D);
     }
 
-    // MenuProvider implementation
     @Override
     public @Nullable AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
         if (!isSpeedRatioFeatureEnabled()) {
@@ -1055,68 +1048,18 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         return Component.translatable(this.getBlockState().getBlock().getDescriptionId());
     }
 
-    // Speed ratio management
     public float getSpeedRatio() {
-        return this.speedRatio;
+        return 1.0F;
     }
 
     public static boolean isSpeedRatioFeatureEnabled() {
-        return SPEED_RATIO_FEATURE_ENABLED;
-    }
-
-    private float getEffectiveSpeedRatio() {
-        return SPEED_RATIO_FEATURE_ENABLED ? this.speedRatio : 1.0F;
+        return false;
     }
 
     public void setSpeedRatio(float ratio) {
-        if (!SPEED_RATIO_FEATURE_ENABLED) {
-            return;
-        }
-
-        float clamped = Math.max(-4.0F, Math.min(4.0F, ratio));
-        boolean changed = this.updateSpeedRatioValue(clamped);
-
-        if (this.linkedPos != null && this.level != null && !this.level.isClientSide) {
-            UniversalJointBlockEntity other = this.resolveLinkedJoint();
-            if (other != null && other.references(this)) {
-                changed |= other.updateSpeedRatioValue(clamped);
-                if (changed) {
-                    this.refreshLinkedKinetics(other);
-                }
-                return;
-            }
-        }
-
-        if (changed) {
-            this.refreshKinetics();
-        }
-    }
-
-    private boolean updateSpeedRatioValue(float ratio) {
-        if (Math.abs(this.speedRatio - ratio) < 0.001F) {
-            return false;
-        }
-
-        this.speedRatio = ratio;
-        this.setChanged();
-        this.sendData();
-        return true;
-    }
-
-    private void refreshLinkedKinetics(UniversalJointBlockEntity other) {
-        UniversalJointBlockEntity source = this.isTransmissionSourceFor(other) ? this : other;
-        UniversalJointBlockEntity target = source == this ? other : this;
-
-        target.refreshKinetics();
-        source.refreshKinetics();
-        source.rememberTransmissionState(target, true);
     }
 
     public void applySyncedSpeedRatio(float ratio) {
-        if (!SPEED_RATIO_FEATURE_ENABLED) {
-            return;
-        }
-        this.speedRatio = Math.max(-4.0F, Math.min(4.0F, ratio));
     }
 
     public static float getMaxSpeedRatio() {
