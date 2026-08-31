@@ -4,10 +4,10 @@ Adds universal joints, hydraulic links, and kinetic conversion bearings for Aero
 
 ## Requirements
 
-A. Minecraft 1.21.1
-B. NeoForge 21.1.226 or newer in the 21.1 line
-C. Create 6.0.10 or newer
-D. Sable 2.0.0 or newer
+A. Minecraft 1.21.1  
+B. NeoForge 21.1.226 or newer in the 21.1 line  
+C. Create 6.0.10 or newer  
+D. Sable 2.0.0 or newer  
 E. Simulated 1.3.0 or newer
 
 The mod targets Sable 2.x only. It does not include a Sable 1.x compatibility layer.
