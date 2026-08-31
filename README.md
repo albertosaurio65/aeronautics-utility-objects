@@ -1,14 +1,14 @@
 # Create Aeronautics: Transmission & Linkage
 
-Adds universal joints, hydraulic links, and kinetic conversion bearings for connecting moving Aeronautics structures.
+Adds universal joints, hydraulic links, and kinetic conversion bearings for Aeronautics structures.
 
 ## Requirements
 
-- Minecraft 1.21.1
-- NeoForge 21.1.226 or newer in the 21.1 line
-- Create 6.0.10 or newer
-- Sable 2.0.0 or newer
-- Simulated 1.3.0 or newer
+A. Minecraft 1.21.1
+B. NeoForge 21.1.226 or newer in the 21.1 line
+C. Create 6.0.10 or newer
+D. Sable 2.0.0 or newer
+E. Simulated 1.3.0 or newer
 
 The mod targets Sable 2.x only. It does not include a Sable 1.x compatibility layer.
 
