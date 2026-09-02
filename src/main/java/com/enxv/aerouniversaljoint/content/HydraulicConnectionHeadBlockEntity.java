@@ -2460,9 +2460,12 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
 
     private void applyLengthVelocityChange(RigidBodyHandle ownHandle, @Nullable ServerSubLevel otherSubLevel,
                                            Vector3d worldVelocityDelta) {
+        if (ownHandle == null || !ownHandle.isValid()) {
+            return;
+        }
         ownHandle.addLinearAndAngularVelocity(worldVelocityDelta, new Vector3d());
 
-        if (otherSubLevel == null) {
+        if (otherSubLevel == null || otherSubLevel.isRemoved()) {
             return;
         }
 
@@ -2477,8 +2480,14 @@ public class HydraulicConnectionHeadBlockEntity extends SmartBlockEntity impleme
     private void applyLengthImpulse(ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle, Vector3d ownLocal,
                                     @Nullable ServerSubLevel otherSubLevel, Vector3d otherLocal,
                                     Vector3d worldImpulse) {
+        if (ownSubLevel == null || ownSubLevel.isRemoved() || ownHandle == null || !ownHandle.isValid()) {
+            return;
+        }
         RigidBodyHandle otherHandle = null;
         if (otherSubLevel != null) {
+            if (otherSubLevel.isRemoved()) {
+                return;
+            }
             otherHandle = RigidBodyHandle.of(otherSubLevel);
             if (otherHandle == null || !otherHandle.isValid()) {
                 return;

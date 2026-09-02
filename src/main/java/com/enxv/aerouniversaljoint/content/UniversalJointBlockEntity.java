@@ -554,7 +554,7 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
         }
 
         SubLevel subLevel = SubLevelContainer.getContainer(this.level).getSubLevel(dependencySubLevelId);
-        return subLevel != null ? List.of(subLevel) : null;
+        return subLevel != null && !subLevel.isRemoved() ? List.of(subLevel) : null;
     }
 
     @Nullable
@@ -849,12 +849,18 @@ public class UniversalJointBlockEntity extends KineticBlockEntity implements Blo
 
     private void applyElasticImpulse(ServerSubLevel ownSubLevel, RigidBodyHandle ownHandle, Vector3d ownLocal,
                                      @Nullable ServerSubLevel otherSubLevel, Vector3d otherLocal, Vector3d worldImpulse) {
+        if (ownSubLevel.isRemoved() || ownHandle == null || !ownHandle.isValid()) {
+            return;
+        }
         Vector3d ownImpulse = ownSubLevel.logicalPose().transformNormalInverse(worldImpulse, new Vector3d());
         this.elasticForceTotal.applyImpulseAtPoint(ownSubLevel, ownLocal, ownImpulse);
         ownHandle.applyForcesAndReset(this.elasticForceTotal);
 
-        if (otherSubLevel != null) {
+        if (otherSubLevel != null && !otherSubLevel.isRemoved()) {
             RigidBodyHandle otherHandle = RigidBodyHandle.of(otherSubLevel);
+            if (otherHandle == null || !otherHandle.isValid()) {
+                return;
+            }
             Vector3d partnerImpulse = otherSubLevel.logicalPose().transformNormalInverse(worldImpulse.negate(new Vector3d()), new Vector3d());
             this.partnerElasticForceTotal.applyImpulseAtPoint(otherSubLevel, otherLocal, partnerImpulse);
             otherHandle.applyForcesAndReset(this.partnerElasticForceTotal);
